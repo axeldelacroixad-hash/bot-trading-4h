@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from flask import Flask
+import zoneinfo
 
 # ==========================================
 # 0. SERVEUR FLASK ANTI-SOMMEIL (KEEP-ALIVE)
@@ -30,9 +31,15 @@ CAPITAL = 10000.0       # Capital de départ (€)
 RISK_PCT = 0.01        # 1 % de risque par trade
 RR_RATIO = 2.5         # Ratio Risk/Reward 1:2.5
 
-# Fuseau horaire Français
-import zoneinfo
 PARIS_TZ = zoneinfo.ZoneInfo("Europe/Paris")
+
+# Heures fixes de lancement des bougies 4H (en heure de Paris)
+TARGET_HOURS = [0, 4, 8, 12, 16, 20]
+
+# ==========================================
+# LISTE NOIRE (EXCLUSION D'ACTIFS)
+# ==========================================
+BLACKLIST = ["PG", "UNH"]
 
 # ==========================================
 # 1. BASE FIXE MINIMALE
@@ -99,6 +106,9 @@ def build_universe():
     
     cleaned = []
     for t in full_list:
+        # Exclusion stricte des actifs de la Blacklist
+        if t in BLACKLIST:
+            continue
         if "=X" in t and t not in ["GC=F", "SI=F"]:
             continue
         if t.endswith(".BA") or t.endswith(".MX"):
@@ -107,8 +117,10 @@ def build_universe():
             continue
         if len(t) <= 10 and not t.startswith("0P"):
             cleaned.append(t)
-        
-    return list(set(cleaned))
+            
+    final_universe = list(set(cleaned))
+    print(f"📋 Liste des actifs retenus pour ce scan ({len(final_universe)}) : {sorted(final_universe)}")
+    return final_universe
 
 # ==========================================
 # 3. CALCUL DU TDI & SCAN
@@ -131,7 +143,7 @@ def calculate_tdi(df, rsi_period=14, fast_ma=2, slow_ma=7):
 
 def send_telegram_message(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Erreur: Token ou Chat ID Telegram manquant dans Replit Secrets.")
+        print("Erreur: Token ou Chat ID Telegram manquant.")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
@@ -143,7 +155,6 @@ def send_telegram_message(message):
 def run_scan():
     universe = build_universe()
     
-    # Heure locale de Paris
     now_paris = datetime.datetime.now(PARIS_TZ)
     now_str = now_paris.strftime("%d/%m/%Y %H:%M")
     
@@ -232,20 +243,38 @@ def run_scan():
         full_msg = report_header + "\n\n" + "\n\n".join(opportunities)
         send_telegram_message(full_msg)
 
+# ==========================================
+# GESTION DES HORAIRES DE SCAN (HORLOGE FIXE)
+# ==========================================
+def get_seconds_until_next_scan():
+    now = datetime.datetime.now(PARIS_TZ)
+    for h in TARGET_HOURS:
+        target = now.replace(hour=h, minute=1, second=0, microsecond=0)
+        if target > now:
+            return (target - now).total_seconds()
+            
+    tomorrow = now + datetime.timedelta(days=1)
+    target = tomorrow.replace(hour=0, minute=1, second=0, microsecond=0)
+    return (target - now).total_seconds()
+
 if __name__ == "__main__":
-    # Lancement du serveur Web Flask en arrière-plan
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
     
-    print("Démarrage du bot de trading 4H avec Anti-Sommeil...")
+    print("Démarrage du bot de trading 4H avec Horloge Synchronisée...")
+    
     while True:
         try:
             now_p = datetime.datetime.now(PARIS_TZ)
             print(f"[{now_p.strftime('%Y-%m-%d %H:%M:%S')}] Lancement du scan...")
             run_scan()
-            print("Scan terminé. Attente de 4 heures...")
-            time.sleep(4 * 3600)
+            
+            sleep_seconds = get_seconds_until_next_scan()
+            next_scan_dt = now_p + datetime.timedelta(seconds=sleep_seconds)
+            print(f"Scan terminé. Prochain scan prévu à {next_scan_dt.strftime('%H:%M:%S')} (dans {int(sleep_seconds // 60)} minutes).")
+            time.sleep(sleep_seconds)
+            
         except Exception as e:
             print(f"Erreur globale : {e}")
             time.sleep(300)
