@@ -33,7 +33,7 @@ RR_RATIO = 2.5         # Ratio Risk/Reward 1:2.5
 
 PARIS_TZ = zoneinfo.ZoneInfo("Europe/Paris")
 
-# Heures fixes de lancement des bougies 4H (en heure de Paris)
+# Heures fixes de lancement des scans (heure de Paris)
 TARGET_HOURS = [0, 4, 8, 12, 16, 20]
 
 # ==========================================
@@ -106,7 +106,6 @@ def build_universe():
     
     cleaned = []
     for t in full_list:
-        # Exclusion stricte des actifs de la Blacklist
         if t in BLACKLIST:
             continue
         if "=X" in t and t not in ["GC=F", "SI=F"]:
@@ -123,21 +122,24 @@ def build_universe():
     return final_universe
 
 # ==========================================
-# 3. CALCUL DU TDI & SCAN
+# 3. CALCUL DU TDI EXACT (14, 34, 2, 7) & SCAN
 # ==========================================
-def calculate_tdi(df, rsi_period=14, fast_ma=2, slow_ma=7):
+def calculate_tdi(df, rsi_period=14, band_length=34, fast_ma=2, slow_ma=7):
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/rsi_period, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/rsi_period, adjust=False).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
     
-    fast_line = rsi.rolling(window=fast_ma).mean()
-    slow_line = rsi.rolling(window=slow_ma).mean()
+    fast_line = rsi.rolling(window=fast_ma).mean()    # Ligne Verte (RSI Price Line)
+    slow_line = rsi.rolling(window=slow_ma).mean()    # Ligne Rouge (Trade Signal Line)
+    yellow_line = rsi.rolling(window=band_length).mean() # Ligne Jaune (Market Base Line / Bollinger Median)
+    
     sma50 = df['Close'].rolling(window=50).mean()
     
     df['TDI_Fast'] = fast_line
     df['TDI_Slow'] = slow_line
+    df['TDI_Yellow'] = yellow_line
     df['SMA50'] = sma50
     return df
 
@@ -179,18 +181,30 @@ def run_scan():
             df_4h = calculate_tdi(df_4h)
             scanned_count += 1
             
-            row_prev = df_4h.iloc[-2]
-            row_prev2 = df_4h.iloc[-3]
+            row_prev = df_4h.iloc[-2]  # Bougie 4H venant de clôturer
+            row_prev2 = df_4h.iloc[-3] # Bougie 4H précédente
             
             close_price = float(row_prev['Close'])
             sma50 = float(row_prev['SMA50'])
+            
             fast_curr = float(row_prev['TDI_Fast'])
             slow_curr = float(row_prev['TDI_Slow'])
-            fast_prev = float(row_prev2['TDI_Fast'])
-            slow_prev = float(row_prev2['TDI_Slow'])
+            yellow_curr = float(row_prev['TDI_Yellow'])
             
-            is_buy = (fast_prev <= slow_prev) and (fast_curr > slow_curr) and (close_price > sma50)
-            is_sell = (fast_prev >= slow_prev) and (fast_curr < slow_curr) and (close_price < sma50)
+            slow_prev = float(row_prev2['TDI_Slow'])
+            yellow_prev = float(row_prev2['TDI_Yellow'])
+            
+            # Condition d'Achat :
+            # 1. Croisement de la ligne Rouge (Slow) au-dessus de la ligne Jaune (Market Base Line)
+            # 2. Ligne Verte (Fast) au-dessus de la ligne Rouge
+            # 3. Prix de clôture au-dessus de la SMA50
+            is_buy = (slow_prev <= yellow_prev) and (slow_curr > yellow_curr) and (fast_curr > slow_curr) and (close_price > sma50)
+            
+            # Condition de Vente :
+            # 1. Croisement de la ligne Rouge (Slow) sous la ligne Jaune (Market Base Line)
+            # 2. Ligne Verte (Fast) sous la ligne Rouge
+            # 3. Prix de clôture sous la SMA50
+            is_sell = (slow_prev >= yellow_prev) and (slow_curr < yellow_curr) and (fast_curr < slow_curr) and (close_price < sma50)
             
             if is_buy or is_sell:
                 info = yf.Ticker(ticker).info
@@ -262,7 +276,7 @@ if __name__ == "__main__":
     t.daemon = True
     t.start()
     
-    print("Démarrage du bot de trading 4H avec Horloge Synchronisée...")
+    print("Démarrage du bot de trading 4H avec Stratégie TDI-Rouge/Jaune...")
     
     while True:
         try:
