@@ -8,7 +8,6 @@ import yfinance as yf
 from flask import Flask
 import zoneinfo
 
-
 # ==========================================
 # 0. SERVEUR FLASK ANTI-SOMMEIL (KEEP-ALIVE)
 # ==========================================
@@ -24,8 +23,8 @@ def run_flask():
 # ==========================================
 # CONFIGURATION TELEGRAM (En dur pour test local)
 # ==========================================
-TELEGRAM_BOT_TOKEN = "METS_TON_TOKEN_ICI"
-TELEGRAM_CHAT_ID = "METS_TON_CHAT_ID_ICI"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 CAPITAL = 10000.0
 RISK_AMOUNT = CAPITAL * 0.01  # 1% de risque = 100 €
