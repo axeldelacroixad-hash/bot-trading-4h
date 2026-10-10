@@ -21,10 +21,10 @@ def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
 # ==========================================
-# CONFIGURATION TELEGRAM & PARAMÈTRES
+# CONFIGURATION TELEGRAM (En dur pour test local)
 # ==========================================
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = "METS_TON_TOKEN_ICI"
+TELEGRAM_CHAT_ID = "METS_TON_CHAT_ID_ICI"
 
 CAPITAL = 10000.0
 RISK_AMOUNT = CAPITAL * 0.01  # 1% de risque = 100 €
@@ -63,7 +63,7 @@ ASSETS = {
 # ==========================================
 def send_telegram(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Erreur : Tokens Telegram non trouvés dans les variables d'environnement.")
+        print("Erreur : Tokens Telegram non trouvés.")
         return
         
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -140,8 +140,8 @@ def scan_live_market():
             msg = (
                 f"🟢 *{now_str}* | *{symbol}* | {info['name']}\n"
                 f"• Prix actuel : {price:.2f}\n"
-                f"• SL ATR \\(max\\) : {sl_price:.2f}\n"
-                f"• Position \\(1\%\\) : {position_size:.2f} €"
+                f"• SL ATR (max) : {sl_price:.2f}\n"
+                f"• Position (1%) : {position_size:.2f} €"
             )
             opportunities.append(msg)
 
@@ -158,8 +158,8 @@ def scan_live_market():
             msg = (
                 f"🔴 *{now_str}* | *{symbol}* | {info['name']}\n"
                 f"• Prix actuel : {price:.2f}\n"
-                f"• SL ATR \\(max\\) : {sl_price:.2f}\n"
-                f"• Position \\(1\%\\) : {position_size:.2f} €"
+                f"• SL ATR (max) : {sl_price:.2f}\n"
+                f"• Position (1%) : {position_size:.2f} €"
             )
             opportunities.append(msg)
 
@@ -187,23 +187,26 @@ def get_seconds_until_next_scan():
     return (target - now).total_seconds()
 
 if __name__ == "__main__":
-    # Lancement du serveur Flask en arrière-plan pour éviter la mise en veille
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
     
     print("Démarrage du bot de trading 4H (Radar 17 actifs) avec planification horaire...")
     
+    # Premier scan immédiat pour tester
+    scan_live_market()
+    
     while True:
         try:
+            sleep_seconds = get_seconds_until_next_scan()
+            now_p = datetime.datetime.now(PARIS_TZ)
+            next_scan_dt = now_p + datetime.timedelta(seconds=sleep_seconds)
+            print(f"Prochain scan prévu à {next_scan_dt.strftime('%H:%M:%S')} (dans {int(sleep_seconds // 60)} minutes).\n")
+            time.sleep(sleep_seconds)
+            
             now_p = datetime.datetime.now(PARIS_TZ)
             print(f"[{now_p.strftime('%Y-%m-%d %H:%M:%S')}] Lancement du scan...")
             scan_live_market()
-            
-            sleep_seconds = get_seconds_until_next_scan()
-            next_scan_dt = now_p + datetime.timedelta(seconds=sleep_seconds)
-            print(f"Scan terminé. Prochain scan prévu à {next_scan_dt.strftime('%H:%M:%S')} (dans {int(sleep_seconds // 60)} minutes).\n")
-            time.sleep(sleep_seconds)
             
         except Exception as e:
             print(f"Erreur globale : {e}")
