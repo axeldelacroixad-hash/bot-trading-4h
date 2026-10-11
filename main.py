@@ -16,7 +16,7 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT
-RISQUE_DU_TRADE = 1.5
+RISQUE_DU_TRADE = 2
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
@@ -126,6 +126,8 @@ def scan_markets():
                     continue
                 
                 position_size = (RISK_AMOUNT / sl_distance) * price
+                nb_unite = RISK_AMOUNT / sl_distance
+                take_profit = price + (sl_distance * RISQUE_DU_TRADE)
                 if position_size > CAPITAL:
                     position_size = CAPITAL
                 
@@ -137,9 +139,9 @@ def scan_markets():
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
-                    f"• Prix TP : price * RISQUE_DU_TRADE
-                    f"• Nb d'unités : (RISK_AMOUNT / (price - sl_price))\n"
-                    f"• Total Trade € : (RISK_AMOUNT / (price - sl_price)) * price\n"
+                    f"• Prix TP : {take_profit:.3f}\n"
+                    f"• Nb d'unités : *{nb-unite:.3f}*\n"
+                    f"• Total Trade € : {position_size:.3f}
                     f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
@@ -167,6 +169,7 @@ def scan_markets():
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : **SHORT (Vente)**\n"
                     f"• Stop Loss (Dernier Sommet) : {sl_price:.3f}\n"
+                    f"• Prix TP : {price - (sl_distance * RISQUE_DU_TRADE)}\n"
                     f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
