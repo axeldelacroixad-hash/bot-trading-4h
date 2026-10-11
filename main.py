@@ -142,11 +142,10 @@ def scan_markets():
                     f"• Prix TP : {take_profit:.3f}\n"
                     f"• Nb d'unités : *{nb_unite:.3f}*\n"
                     f"• Total Trade € : {position_size:.3f}\n"
-                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
 
-            # --- CONDITION SHORT (VENTE) ---
+# --- CONDITION SHORT (VENTE) ---
             red_cross_down = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
             green_below = last['TDI_Green'] <= last['TDI_Red']
             strict_sma_short = price < last['SMA50']
@@ -159,6 +158,9 @@ def scan_markets():
                     continue
                 
                 position_size = (RISK_AMOUNT / sl_distance) * price
+                nb_unite = RISK_AMOUNT / sl_distance
+                take_profit = price - (sl_distance * RISQUE_DU_TRADE)
+                
                 if position_size > CAPITAL:
                     position_size = CAPITAL
                 
@@ -168,9 +170,11 @@ def scan_markets():
                     f"🏢 **Secteur :** {info['sector']}\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : **SHORT (Vente)**\n"
+                    f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Sommet) : {sl_price:.3f}\n"
-                    f"• Prix TP : {price - (sl_distance * RISQUE_DU_TRADE)}\n"
-                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
+                    f"• Prix TP : {take_profit:.3f}\n"
+                    f"• Nb d'unités : *{nb_unite:.3f}*\n"
+                    f"• Total Trade € : {position_size:.3f}\n"
                 )
                 opportunities.append(msg)
                 
