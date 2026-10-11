@@ -1,213 +1,197 @@
 import os
 import time
-import datetime
-import threading
-import requests
+from datetime import datetime
+import pytz
 import pandas as pd
 import yfinance as yf
 from flask import Flask
-import zoneinfo
+import threading
 
-# ==========================================
-# 0. SERVEUR FLASK ANTI-SOMMEIL (KEEP-ALIVE)
-# ==========================================
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "Bot Trading 4H (Radar 17 actifs) est en ligne et actif !"
+# --- CONFIGURATION ---
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+CAPITAL = 10000.0  # Capital en €
+RISK_PCT = 0.01    # Risque de 1% par trade
+RISK_AMOUNT = CAPITAL * RISK_PCT
 
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
+PARIS_TZ = pytz.timezone('Europe/Paris')
 
-# ==========================================
-# CONFIGURATION TELEGRAM (En dur pour test local)
-# ==========================================
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
-CAPITAL = 10000.0
-RISK_AMOUNT = CAPITAL * 0.01  # 1% de risque = 100 €
-
-PARIS_TZ = zoneinfo.ZoneInfo("Europe/Paris")
-
-# Heures de déclenchement (décalées à XX:02 pour s'assurer que la bougie 4H est bien clôturée)
-TARGET_HOURS = [0, 4, 8, 12, 16, 20]
-TARGET_MINUTE = 2
-
-# ==========================================
-# PANIER D'ACTIFS (17 Actifs fixes)
-# ==========================================
+# Liste des 17 actifs avec leurs infos de région et secteur
 ASSETS = {
-    'CAC40': {'name': 'CAC 40 (France)', 'ticker': '^FCHI', 'desc': 'Les 40 plus grandes entreprises de France'},
-    'EU50': {'name': 'Euro Stoxx 50', 'ticker': '^STOXX50E', 'desc': 'Indice vedette de la zone euro'},
-    'US100': {'name': 'Nasdaq 100', 'ticker': '^NDX', 'desc': 'Indice technologique américain de référence'},
-    'US30': {'name': 'Dow Jones', 'ticker': '^DJI', 'desc': 'Les 30 plus grandes valeurs industrielles US'},
-    'DE40': {'name': 'DAX 40 (Allemagne)', 'ticker': '^GDAXI', 'desc': 'Les 40 plus grandes entreprises allemandes'},
-    'UK100': {'name': 'FTSE 100 (UK)', 'ticker': '^FTSE', 'desc': 'Indice boursier de Londres'},
-    'JP225': {'name': 'Nikkei 225 (Japon)', 'ticker': '^N225', 'desc': 'Principal indice boursier de Tokyo'},
-    'HK50': {'name': 'Hang Seng (Hong Kong)', 'ticker': '^HSI', 'desc': 'Indice de la bourse de Hong Kong'},
-    'ASX200': {'name': 'ASX 200 (Australie)', 'ticker': '^AXJO', 'desc': 'Indice boursier australien'},
-    'SPX': {'name': 'S&P 500 (US)', 'ticker': '^GSPC', 'desc': 'Les 500 plus grandes entreprises US'},
-    'GOLD': {'name': 'Or (Gold)', 'ticker': 'GC=F', 'desc': 'Valeur refuge et matière première précieuse'},
-    'SILVER': {'name': 'Argent (Silver)', 'ticker': 'SI=F', 'desc': 'Métal précieux industriel et monétaire'},
-    'OIL': {'name': 'Pétrole WTI', 'ticker': 'CL=F', 'desc': 'Matière première énergétique'},
-    'EURUSD': {'name': 'EUR/USD', 'ticker': 'EURUSD=X', 'desc': 'Paire de devises majeure'},
-    'GBPUSD': {'name': 'GBP/USD', 'ticker': 'GBPUSD=X', 'desc': 'Paire livre sterling / dollar'},
-    'USDJPY': {'name': 'USD/JPY', 'ticker': 'USDJPY=X', 'desc': 'Paire dollar / yen japonais'},
-    'AUDUSD': {'name': 'AUD/USD', 'ticker': 'AUDUSD=X', 'desc': 'Paire dollar australien / dollar US'}
+    "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)"},
+    "GBPUSD=X": {"name": "GBP/USD", "country": "Royaume-Uni / États-Unis", "sector": "Forex (Devises)"},
+    "USDJPY=X": {"name": "USD/JPY", "country": "États-Unis / Japon", "sector": "Forex (Devises)"},
+    "AUDUSD=X": {"name": "AUD/USD", "country": "Australie / États-Unis", "sector": "Forex (Devises)"},
+    "USDCAD=X": {"name": "USD/CAD", "country": "États-Unis / Canada", "sector": "Forex (Devises)"},
+    "EURJPY=X": {"name": "EUR/JPY", "country": "Zone Euro / Japon", "sector": "Forex (Devises)"},
+    "GBPJPY=X": {"name": "GBP/JPY", "country": "Royaume-Uni / Japon", "sector": "Forex (Devises)"},
+    "GC=X": {"name": "Or (Gold)", "country": "Mondial", "sector": "Matières Premières (Metaux)"},
+    "CL=X": {"name": "Pétrole WTI", "country": "États-Unis / Mondial", "sector": "Matières Premières (Énergie)"},
+    "BTC-USD": {"name": "Bitcoin", "country": "Mondial", "sector": "Cryptomonnaie"},
+    "ETH-USD": {"name": "Ethereum", "country": "Mondial", "sector": "Cryptomonnaie"},
+    "^FCHI": {"name": "CAC 40", "country": "France", "sector": "Indices boursiers"},
+    "^GDAXI": {"name": "DAX 40", "country": "Allemagne", "sector": "Indices boursiers"},
+    "^FTSE": {"name": "FTSE 100", "country": "Royaume-Uni", "sector": "Indices boursiers"},
+    "^SPX": {"name": "S&P 500", "country": "États-Unis", "sector": "Indices boursiers"},
+    "^NDX": {"name": "Nasdaq 100", "country": "États-Unis", "sector": "Indices boursiers"},
+    "^N225": {"name": "Nikkei 225", "country": "Japon", "sector": "Indices boursiers"}
 }
 
-# ==========================================
-# FONCTION D'ENVOI TELEGRAM
-# ==========================================
-def send_telegram(message):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Erreur : Tokens Telegram non trouvés.")
+def send_telegram_message(message):
+    import requests
+    if not TOKEN or not CHAT_ID:
+        print("Erreur : Token ou Chat ID Telegram manquant.")
         return
-        
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": CHAT_ID,
         "text": message,
         "parse_mode": "Markdown"
     }
     try:
-        requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
     except Exception as e:
         print(f"Erreur d'envoi Telegram : {e}")
 
-# ==========================================
-# CŒUR DU SCANNER 4H
-# ==========================================
-def scan_live_market():
-    now_paris = datetime.datetime.now(PARIS_TZ)
-    now_str = now_paris.strftime("%d/%m/%Y - %H:%M")
-    total_checked = 0
-    signals_found = 0
+def add_tdi_indicators(df):
+    # Calcul du RSI (Période 13)
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=13).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=13).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
     
+    # Ligne Verte (Price Line - Période 2)
+    df['TDI_Green'] = rsi.rolling(window=2).mean()
+    
+    # Ligne Rouge (Signal Line - Période 7)
+    df['TDI_Red'] = rsi.rolling(window=7).mean()
+    
+    # Ligne Jaune (Middle Band / Baseline - Période 34)
+    df['TDI_Yellow'] = rsi.rolling(window=34).mean()
+    
+    # SMA 50 pour le filtre de prix
+    df['SMA50'] = df['Close'].rolling(window=50).mean()
+    
+    # ATR (14) pour le Stop Loss
+    high_low = df['High'] - df['Low']
+    high_close = (df['High'] - df['Close'].shift()).abs()
+    low_close = (df['Low'] - df['Close'].shift()).abs()
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = ranges.max(axis=1)
+    df['ATR'] = true_range.rolling(window=14).mean()
+    
+    return df
+
+def scan_markets():
+    print("--- DÉBUT DU SCAN DES MARCHÉS (4H) ---")
     opportunities = []
-    
-    print(f"\n--- DÉBUT DU SCAN LIVE ({now_str}) ---")
+    now_str = datetime.now(PARIS_TZ).strftime("%d/%m/%Y-%H:%M")
     
     for symbol, info in ASSETS.items():
-        df = yf.download(info['ticker'], period="5d", interval="1h", progress=False)
-        
-        if df.empty or len(df) < 50:
-            continue
+        try:
+            # Récupération des données 4H
+            df = yf.download(symbol, period="60d", interval="4h", progress=False)
+            if df.empty or len(df) < 50:
+                continue
             
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        total_checked += 1
-
-        # Indicateurs : SMA 50 et TDI (RSI 13, Red 3, Yellow 21)
-        df['SMA50'] = df['Close'].rolling(window=50).mean()
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=13).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=13).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-        
-        df['TDI_Red'] = df['RSI'].rolling(window=3).mean()
-        df['TDI_Yellow'] = df['RSI'].rolling(window=21).mean()
-        
-        # ATR pour le Stop Loss
-        high_low = df['High'] - df['Low']
-        high_close = abs(df['High'] - df['Close'].shift())
-        low_close = abs(df['Low'] - df['Close'].shift())
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        df['ATR'] = tr.rolling(window=14).mean()
-        
-        last = df.iloc[-2]
-        prev = df.iloc[-3]
-        
-        price = last['Close']
-        atr = last['ATR']
-        
-        if pd.isna(atr) or atr == 0:
-            continue
-
-        # --- CONDITION LONG (ACHAT) ---
-        cross_up = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
-        near_sma_long = price >= (last['SMA50'] * 0.99)
-        
-        if cross_up and near_sma_long:
-            signals_found += 1
-            sl_distance = atr * 1.5
-            sl_price = price - sl_distance
-            position_size = (RISK_AMOUNT / sl_distance) * price
+            # Nettoyage des index multi-niveaux si présents dans yfinance
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+                
+            df = add_tdi_indicators(df)
             
-            msg = (
-                f"🟢 *{now_str}* | *{symbol}* | {info['name']}\n"
-                f"• Prix actuel : {price:.2f}\n"
-                f"• SL ATR (max) : {sl_price:.2f}\n"
-                f"• Position (1%) : {position_size:.2f} €"
-            )
-            opportunities.append(msg)
-
-        # --- CONDITION SHORT (VENTE) ---
-        cross_down = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
-        near_sma_short = price <= (last['SMA50'] * 1.01)
-        
-        if cross_down and near_sma_short:
-            signals_found += 1
-            sl_distance = atr * 1.5
-            sl_price = price + sl_distance
-            position_size = (RISK_AMOUNT / sl_distance) * price
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
             
-            msg = (
-                f"🔴 *{now_str}* | *{symbol}* | {info['name']}\n"
-                f"• Prix actuel : {price:.2f}\n"
-                f"• SL ATR (max) : {sl_price:.2f}\n"
-                f"• Position (1%) : {position_size:.2f} €"
-            )
-            opportunities.append(msg)
+            price = float(last['Close'])
+            atr = float(last['ATR'])
+            
+            if pd.isna(atr) or atr == 0:
+                continue
 
-    # Envoi des résultats sur Telegram
-    if signals_found > 0:
-        for opp in opportunities:
-            send_telegram(opp)
+            # --- CONDITION LONG (ACHAT) ---
+            cross_up = (prev['TDI_Green'] <= prev['TDI_Red']) and (last['TDI_Green'] > last['TDI_Red'])
+            trend_long = last['TDI_Red'] >= last['TDI_Yellow']
+            near_sma_long = price >= (last['SMA50'] * 0.99)
+            
+            if cross_up and trend_long and near_sma_long:
+                sl_distance = atr * 1.5
+                sl_price = price - sl_distance  # SL en dessous pour un LONG
+                position_size = (RISK_AMOUNT / sl_distance) * price
+                
+                msg = (
+                    f"🟢 *{now_str}* | *{symbol}* | **{info['name']}**\n"
+                    f"🌍 **Région :** {info['country']}\n"
+                    f"🏢 **Secteur :** {info['sector']}\n"
+                    f"━━━━━━━━━━━━━━━━━━━\n"
+                    f"• Signal : **LONG (Achat)**\n"
+                    f"• Prix actuel : {price:.3f}\n"
+                    f"• Stop Loss : {sl_price:.3f}\n"
+                    f"• Position (1%) : {position_size:.2f} €"
+                )
+                opportunities.append(msg)
+
+            # --- CONDITION SHORT (VENTE) ---
+            cross_down = (prev['TDI_Green'] >= prev['TDI_Red']) and (last['TDI_Green'] < last['TDI_Red'])
+            trend_short = last['TDI_Red'] <= last['TDI_Yellow']
+            near_sma_short = price <= (last['SMA50'] * 1.01)
+            
+            if cross_down and trend_short and near_sma_short:
+                sl_distance = atr * 1.5
+                sl_price = price + sl_distance  # SL au-dessus pour un SHORT
+                position_size = (RISK_AMOUNT / sl_distance) * price
+                
+                msg = (
+                    f"🔴 *{now_str}* | *{symbol}* | **{info['name']}**\n"
+                    f"🌍 **Région :** {info['country']}\n"
+                    f"🏢 **Secteur :** {info['sector']}\n"
+                    f"━━━━━━━━━━━━━━━━━━━\n"
+                    f"• Signal : **SHORT (Vente)**\n"
+                    f"• Prix actuel : {price:.3f}\n"
+                    f"• Stop Loss : {sl_price:.3f}\n"
+                    f"• Position (1%) : {position_size:.2f} €"
+                )
+                opportunities.append(msg)
+                
+        except Exception as e:
+            print(f"Erreur sur {symbol}: {e}")
+            
+    # Envoi des alertes trouvées
+    if opportunities:
+        for alert in opportunities:
+            send_telegram_message(alert)
+            time.sleep(1)
     else:
-        control_message = f"`[{now_str}] Scan 4H : {total_checked} actifs contrôlés - Rien pour le moment.`"
-        send_telegram(control_message)
-        print(f"[{now_str}] Scan 4H : {total_checked} actifs contrôlés - Rien pour le moment.")
+        print("Aucun signal détecté lors de ce scan.")
+    print("--- FIN DU SCAN ---")
 
-# ==========================================
-# GESTION DES HORAIRES (PLANIFICATION EXACTE)
-# ==========================================
-def get_seconds_until_next_scan():
-    now = datetime.datetime.now(PARIS_TZ)
-    for h in TARGET_HOURS:
-        target = now.replace(hour=h, minute=TARGET_MINUTE, second=0, microsecond=0)
-        if target > now:
-            return (target - now).total_seconds()
-            
-    tomorrow = now + datetime.timedelta(days=1)
-    target = tomorrow.replace(hour=TARGET_HOURS[0], minute=TARGET_MINUTE, second=0, microsecond=0)
-    return (target - now).total_seconds()
-
-if __name__ == "__main__":
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-    
-    print("Démarrage du bot de trading 4H (Radar 17 actifs) avec planification horaire...")
-    
-    # Premier scan immédiat pour tester
-    scan_live_market()
-    
+def run_bot_loop():
     while True:
         try:
-            sleep_seconds = get_seconds_until_next_scan()
-            now_p = datetime.datetime.now(PARIS_TZ)
-            next_scan_dt = now_p + datetime.timedelta(seconds=sleep_seconds)
-            print(f"Prochain scan prévu à {next_scan_dt.strftime('%H:%M:%S')} (dans {int(sleep_seconds // 60)} minutes).\n")
-            time.sleep(sleep_seconds)
-            
-            now_p = datetime.datetime.now(PARIS_TZ)
-            print(f"[{now_p.strftime('%Y-%m-%d %H:%M:%S')}] Lancement du scan...")
-            scan_live_market()
-            
+            scan_markets()
         except Exception as e:
-            print(f"Erreur globale : {e}")
-            time.sleep(300)
+            print(f"Erreur dans la boucle du bot : {e}")
+        # Attend 4 heures avant le prochain scan
+        time.sleep(4 * 3600)
+
+@app.route('/')
+def home():
+    return "Le bot de trading swing 4H est en ligne et actif !"
+
+@app.route('/test-scan')
+def test_scan():
+    scan_markets()
+    return "Scan manuel exécuté avec succès ! Vérifie ton Telegram."
+
+if __name__ == '__main__':
+    # Lancement du thread de fond pour le scan des marchés
+    t = threading.Thread(target=run_bot_loop, daemon=True)
+    t.start()
+    
+    # Lancement de l'application Flask pour Render
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
