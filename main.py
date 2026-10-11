@@ -20,6 +20,7 @@ RISK_AMOUNT = CAPITAL * RISK_PCT
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
 # Liste des 17 actifs avec leurs infos de région et secteur
+# Remplace ta liste ASSETS dans ton code par celle-ci :
 ASSETS = {
     "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)"},
     "GBPUSD=X": {"name": "GBP/USD", "country": "Royaume-Uni / États-Unis", "sector": "Forex (Devises)"},
@@ -28,8 +29,8 @@ ASSETS = {
     "USDCAD=X": {"name": "USD/CAD", "country": "États-Unis / Canada", "sector": "Forex (Devises)"},
     "EURJPY=X": {"name": "EUR/JPY", "country": "Zone Euro / Japon", "sector": "Forex (Devises)"},
     "GBPJPY=X": {"name": "GBP/JPY", "country": "Royaume-Uni / Japon", "sector": "Forex (Devises)"},
-    "GC=X": {"name": "Or (Gold)", "country": "Mondial", "sector": "Matières Premières (Metaux)"},
-    "CL=X": {"name": "Pétrole WTI", "country": "États-Unis / Mondial", "sector": "Matières Premières (Énergie)"},
+    "GLD": {"name": "Or (ETF Gold)", "country": "Mondial", "sector": "Matières Premières (Metaux)"},
+    "USO": {"name": "Pétrole (ETF USO)", "country": "États-Unis / Mondial", "sector": "Matières Premières (Énergie)"},
     "BTC-USD": {"name": "Bitcoin", "country": "Mondial", "sector": "Cryptomonnaie"},
     "ETH-USD": {"name": "Ethereum", "country": "Mondial", "sector": "Cryptomonnaie"},
     "^FCHI": {"name": "CAC 40", "country": "France", "sector": "Indices boursiers"},
