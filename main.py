@@ -16,7 +16,6 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT
-TAKE_PROFIT = 2
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
@@ -176,7 +175,6 @@ def scan_markets():
             send_telegram_message(alert)
             time.sleep(1)
     else:
-        # Message de confirmation de fin de scan (RAS)
         send_telegram_message(f"⚪ *{now_str}* | Scan 4H terminé : Aucun signal valide sur les 17 actifs.")
         print("Aucun signal détecté lors de ce scan.")
         
@@ -198,6 +196,31 @@ def home():
 def test_scan():
     scan_markets()
     return "Scan manuel exécuté avec succès !"
+
+@app.route('/test-calc/<symbol>')
+def test_calculation(symbol):
+    try:
+        df = yf.download(symbol.upper(), period="30d", interval="4h", progress=False)
+        if df.empty:
+            return f"Erreur : Impossible de récupérer les données pour {symbol}"
+        
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        df = add_tdi_indicators(df)
+        
+        # Affichage des 3 dernières bougies sous forme de tableau HTML
+        last_rows = df.tail(3)[['Close', 'SMA50', 'TDI_Green', 'TDI_Red', 'TDI_Yellow']].to_html(classes='table table-striped')
+        
+        html_output = f"""
+        <h2>Résultats du calcul TDI pour : {symbol.upper()}</h2>
+        <p>Voici les dernières valeurs calculées par le bot (à comparer avec ton TradingView) :</p>
+        {last_rows}
+        <br><a href="/">Retour à l'accueil</a>
+        """
+        return html_output
+    except Exception as e:
+        return f"Erreur lors du calcul : {str(e)}"
 
 if __name__ == '__main__':
     t = threading.Thread(target=run_bot_loop, daemon=True)
