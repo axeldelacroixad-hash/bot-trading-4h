@@ -16,7 +16,7 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT
-TAKE_PROFIT = 2
+TAKE_PROFIT = 1.5
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
@@ -122,6 +122,9 @@ def scan_markets():
                     
                 # calcul TAKE_PROFIT_€
                 take_profit = ((price - sl_price) * TAKE_PROFIT) + price
+
+                # calcul du nb d'action a prendre
+                nb_de_tips = RISK_AMOUNT / sl_distance
                 
                 # Calcul de la position
                 position_size = (RISK_AMOUNT / sl_distance) * price
@@ -138,7 +141,8 @@ def scan_markets():
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
-                    f"• TP : {take_profit:.3f}\n"
+                    f"• TP : {take_profit:.3f}\n" €
+                    f"• Nb de tics : *{nb_de_tips:.3f}*\n"
                     f"• Montant engagé : {position_size:.2f} € "
                 )
                 opportunities.append(msg)
