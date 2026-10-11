@@ -19,6 +19,10 @@ RISK_AMOUNT = CAPITAL * RISK_PCT
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
+# Création d'une session HTTP avec un User-Agent pour contourner les restrictions de Yahoo Finance sur Render
+yahoo_session = requests.Session()
+yahoo_session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
 # Liste des 17 actifs avec leurs infos de région et secteur
 ASSETS = {
     "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)"},
@@ -90,9 +94,10 @@ def scan_markets():
     
     for symbol, info in ASSETS.items():
         try:
-            # Récupération des données 4H
-            df = yf.download(symbol, period="60d", interval="4h", progress=False)
+            # Récupération des données 4H via la session HTTP sécurisée
+            df = yf.download(symbol, period="60d", interval="4h", progress=False, session=yahoo_session)
             if df.empty or len(df) < 50:
+                print(f"Pas assez de données ou échec pour {symbol}")
                 continue
             
             if isinstance(df.columns, pd.MultiIndex):
@@ -110,24 +115,18 @@ def scan_markets():
             recent_high = df['High'].iloc[-5:].max()
 
             # --- CONDITION LONG (ACHAT) ---
-            # 1. La ligne Rouge croise la Jaune vers le haut (de manière fraîche)
             red_cross_up = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
-            # 2. La ligne Verte est au-dessus ou égale à la Rouge
             green_above = last['TDI_Green'] >= last['TDI_Red']
-            # 3. Le prix est strictement au-dessus de la SMA 50
             strict_sma_long = price > last['SMA50']
             
             if red_cross_up and green_above and strict_sma_long:
-                sl_price = recent_low * 0.999  # SL sous le dernier creux
+                sl_price = recent_low * 0.999
                 sl_distance = price - sl_price
                 
                 if sl_distance <= 0:
                     continue
                 
-                # Calcul de la position
                 position_size = (RISK_AMOUNT / sl_distance) * price
-                
-                # Plafond strict sans effet de levier (max 10 000 €)
                 if position_size > CAPITAL:
                     position_size = CAPITAL
                 
@@ -144,23 +143,18 @@ def scan_markets():
                 opportunities.append(msg)
 
             # --- CONDITION SHORT (VENTE) ---
-            # 1. La ligne Rouge croise la Jaune vers le bas (de manière fraîche)
             red_cross_down = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
-            # 2. La ligne Verte est en dessous ou égale à la Rouge
             green_below = last['TDI_Green'] <= last['TDI_Red']
-            # 3. Le prix est strictement en dessous de la SMA 50
             strict_sma_short = price < last['SMA50']
             
             if red_cross_down and green_below and strict_sma_short:
-                sl_price = recent_high * 1.001  # SL au-dessus du dernier sommet
+                sl_price = recent_high * 1.001
                 sl_distance = sl_price - price
                 
                 if sl_distance <= 0:
                     continue
                 
                 position_size = (RISK_AMOUNT / sl_distance) * price
-                
-                # Plafond strict sans effet de levier
                 if position_size > CAPITAL:
                     position_size = CAPITAL
                 
