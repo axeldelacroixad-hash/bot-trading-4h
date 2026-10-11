@@ -140,8 +140,8 @@ def scan_markets():
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
                     f"• Prix TP : {take_profit:.3f}\n"
-                    f"• Nb d'unités : *{nb-unite:.3f}*\n"
-                    f"• Total Trade € : {position_size:.3f}
+                    f"• Nb d'unités : *{nb_unite:.3f}*\n"
+                    f"• Total Trade € : {position_size:.3f}\n"
                     f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
