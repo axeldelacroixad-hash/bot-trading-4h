@@ -16,11 +16,11 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT
+TAKE_PROFIT = 2
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
-# Liste des 17 actifs avec leurs infos de région et secteur
-# Remplace ta liste ASSETS dans ton code par celle-ci :
+# Liste des 17 actifs (avec GLD et USO pour l'or et le pétrole sur le cloud)
 ASSETS = {
     "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)"},
     "GBPUSD=X": {"name": "GBP/USD", "country": "Royaume-Uni / États-Unis", "sector": "Forex (Devises)"},
@@ -91,8 +91,10 @@ def scan_markets():
     
     for symbol, info in ASSETS.items():
         try:
-            # Téléchargement natif géré par yfinance (avec gestion interne des requêtes)
+            # Téléchargement des données 4H
             df = yf.download(symbol, period="60d", interval="4h", progress=False)
+            time.sleep(1.5)  # Pause pour éviter le rate-limit de Yahoo
+            
             if df.empty or len(df) < 50:
                 print(f"Pas assez de données ou échec pour {symbol}")
                 continue
@@ -117,7 +119,7 @@ def scan_markets():
             strict_sma_long = price > last['SMA50']
             
             if red_cross_up and green_above and strict_sma_long:
-                sl_price = recent_low * 0.995
+                sl_price = recent_low * 0.999
                 sl_distance = price - sl_price
                 
                 if sl_distance <= 0:
@@ -145,7 +147,7 @@ def scan_markets():
             strict_sma_short = price < last['SMA50']
             
             if red_cross_down and green_below and strict_sma_short:
-                sl_price = recent_high * 1.005
+                sl_price = recent_high * 1.001
                 sl_distance = sl_price - price
                 
                 if sl_distance <= 0:
@@ -161,7 +163,6 @@ def scan_markets():
                     f"🏢 **Secteur :** {info['sector']}\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : **SHORT (Vente)**\n"
-                    f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Sommet) : {sl_price:.3f}\n"
                     f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
@@ -175,7 +176,10 @@ def scan_markets():
             send_telegram_message(alert)
             time.sleep(1)
     else:
+        # Message de confirmation de fin de scan (RAS)
+        send_telegram_message(f"⚪ *{now_str}* | Scan 4H terminé : Aucun signal valide sur les 17 actifs.")
         print("Aucun signal détecté lors de ce scan.")
+        
     print("--- FIN DU SCAN ---")
 
 def run_bot_loop():
