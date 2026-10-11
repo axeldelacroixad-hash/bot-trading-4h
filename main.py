@@ -20,8 +20,9 @@ RISQUE_DU_TRADE = 2
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
-# Liste des 17 actifs (avec GLD et USO pour l'or et le pétrole sur le cloud)
+# Liste complète des actifs (Forex, Matières premières, Cryptos, Indices généraux et Tech mondiale)
 ASSETS = {
+    # --- Forex & Actifs de base ---
     "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)"},
     "GBPUSD=X": {"name": "GBP/USD", "country": "Royaume-Uni / États-Unis", "sector": "Forex (Devises)"},
     "USDJPY=X": {"name": "USD/JPY", "country": "États-Unis / Japon", "sector": "Forex (Devises)"},
@@ -33,12 +34,28 @@ ASSETS = {
     "USO": {"name": "Pétrole (ETF USO)", "country": "États-Unis / Mondial", "sector": "Matières Premières (Énergie)"},
     "BTC-USD": {"name": "Bitcoin", "country": "Mondial", "sector": "Cryptomonnaie"},
     "ETH-USD": {"name": "Ethereum", "country": "Mondial", "sector": "Cryptomonnaie"},
+    
+    # --- Indices boursiers initiaux ---
     "^FCHI": {"name": "CAC 40", "country": "France", "sector": "Indices boursiers"},
     "^GDAXI": {"name": "DAX 40", "country": "Allemagne", "sector": "Indices boursiers"},
     "^FTSE": {"name": "FTSE 100", "country": "Royaume-Uni", "sector": "Indices boursiers"},
     "^SPX": {"name": "S&P 500", "country": "États-Unis", "sector": "Indices boursiers"},
     "^NDX": {"name": "Nasdaq 100", "country": "États-Unis", "sector": "Indices boursiers"},
-    "^N225": {"name": "Nikkei 225", "country": "Japon", "sector": "Indices boursiers"}
+    "^N225": {"name": "Nikkei 225", "country": "Japon", "sector": "Indices boursiers"},
+
+    # --- Nouveaux indices boursiers internationaux ---
+    "^DJI": {"name": "Dow Jones Industrial", "country": "États-Unis", "sector": "Indices boursiers"},
+    "^RUT": {"name": "Russell 2000 (Small Caps)", "country": "États-Unis", "sector": "Indices boursiers"},
+    "^STOXX50E": {"name": "Euro Stoxx 50", "country": "Zone Euro", "sector": "Indices boursiers"},
+    "^AXJO": {"name": "S&P/ASX 200", "country": "Australie", "sector": "Indices boursiers"},
+    "^HSI": {"name": "Hang Seng Index", "country": "Hong Kong / Asie", "sector": "Indices boursiers"},
+
+    # --- Nouveaux indices & secteurs Technologiques géographiques ---
+    "^TWII": {"name": "Taiwan Weighted (Tech/Puces)", "country": "Taïwan", "sector": "Technologie & Semi-conducteurs"},
+    "^KS11": {"name": "KOSPI (Tech & Électronique)", "country": "Corée du Sud", "sector": "Technologie & Électronique"},
+    "^SOX": {"name": "Philadelphia Semiconductor", "country": "États-Unis", "sector": "Technologie (Semi-conducteurs)"},
+    "XLK": {"name": "Technology Select Sector (ETF)", "country": "États-Unis", "sector": "Technologie (Software/Hardware)"},
+    "^SX8P": {"name": "STOXX Europe Tech", "country": "Europe", "sector": "Technologie (Europe)"}
 }
 
 def send_telegram_message(message):
