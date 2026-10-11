@@ -203,7 +203,7 @@ def scan_markets():
             send_telegram_message(alert)
             time.sleep(1)
     else:
-        send_telegram_message(f"⚪ *{now_str}* | Scan 4H terminé : Aucun signal valide sur les 17 actifs.")
+        send_telegram_message(f"⚪ *{now_str}* | Scan 4H terminé : Aucun signal valide sur les 27 actifs.")
         print("Aucun signal détecté lors de ce scan.")
         
     print("--- FIN DU SCAN ---")
