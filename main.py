@@ -19,10 +19,6 @@ RISK_AMOUNT = CAPITAL * RISK_PCT
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
-# Création d'une session HTTP avec un User-Agent pour contourner les restrictions de Yahoo Finance sur Render
-yahoo_session = requests.Session()
-yahoo_session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-
 # Liste des 17 actifs avec leurs infos de région et secteur
 ASSETS = {
     "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)"},
@@ -94,8 +90,8 @@ def scan_markets():
     
     for symbol, info in ASSETS.items():
         try:
-            # Récupération des données 4H via la session HTTP sécurisée
-            df = yf.download(symbol, period="60d", interval="4h", progress=False, session=yahoo_session)
+            # Téléchargement natif géré par yfinance (avec gestion interne des requêtes)
+            df = yf.download(symbol, period="60d", interval="4h", progress=False)
             if df.empty or len(df) < 50:
                 print(f"Pas assez de données ou échec pour {symbol}")
                 continue
@@ -120,7 +116,7 @@ def scan_markets():
             strict_sma_long = price > last['SMA50']
             
             if red_cross_up and green_above and strict_sma_long:
-                sl_price = recent_low * 0.999
+                sl_price = recent_low * 0.995
                 sl_distance = price - sl_price
                 
                 if sl_distance <= 0:
@@ -148,7 +144,7 @@ def scan_markets():
             strict_sma_short = price < last['SMA50']
             
             if red_cross_down and green_below and strict_sma_short:
-                sl_price = recent_high * 1.001
+                sl_price = recent_high * 1.005
                 sl_distance = sl_price - price
                 
                 if sl_distance <= 0:
