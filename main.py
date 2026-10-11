@@ -6,6 +6,7 @@ import pandas as pd
 import yfinance as yf
 from flask import Flask
 import threading
+import requests
 
 app = Flask(__name__)
 
@@ -40,7 +41,6 @@ ASSETS = {
 }
 
 def send_telegram_message(message):
-    import requests
     if not TOKEN or not CHAT_ID:
         print("Erreur : Token ou Chat ID Telegram manquant.")
         return
@@ -73,7 +73,7 @@ def add_tdi_indicators(df):
     # Ligne Jaune (Middle Band / Baseline - Période 34)
     df['TDI_Yellow'] = rsi.rolling(window=34).mean()
     
-    # SMA 50 pour le filtre de prix
+    # SMA 50 pour le filtre de tendance
     df['SMA50'] = df['Close'].rolling(window=50).mean()
     
     return df
@@ -104,22 +104,25 @@ def scan_markets():
             recent_low = df['Low'].iloc[-5:].min()
             recent_high = df['High'].iloc[-5:].max()
 
-            # --- CONDITION LONG (ACHAT) : La ligne Rouge croise la Jaune vers le haut, Verte au-dessus ---
+            # --- CONDITION LONG (ACHAT) ---
+            # 1. La ligne Rouge croise la Jaune vers le haut
             red_cross_up = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
+            # 2. La ligne Verte est au-dessus ou égale à la Rouge
             green_above = last['TDI_Green'] >= last['TDI_Red']
-            near_sma_long = price >= (last['SMA50'] * 0.99)
+            # 3. Le prix est strictement au-dessus de la SMA 50
+            strict_sma_long = price > last['SMA50']
             
-            if red_cross_up and green_above and near_sma_long:
-                sl_price = recent_low * 0.999  # SL juste sous le dernier creux
+            if red_cross_up and green_above and strict_sma_long:
+                sl_price = recent_low * 0.999  # SL sous le dernier creux
                 sl_distance = price - sl_price
                 
                 if sl_distance <= 0:
                     continue
                 
-                # Calcul de la position pour 1% de risque
+                # Calcul de la position
                 position_size = (RISK_AMOUNT / sl_distance) * price
                 
-                # Plafond strict sans effet de levier (max capital = 10 000 €)
+                # Plafond strict sans effet de levier (max 10 000 €)
                 if position_size > CAPITAL:
                     position_size = CAPITAL
                 
@@ -135,13 +138,16 @@ def scan_markets():
                 )
                 opportunities.append(msg)
 
-            # --- CONDITION SHORT (VENTE) : La ligne Rouge croise la Jaune vers le bas, Verte en dessous ---
+            # --- CONDITION SHORT (VENTE) ---
+            # 1. La ligne Rouge croise la Jaune vers le bas
             red_cross_down = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
+            # 2. La ligne Verte est en dessous ou égale à la Rouge
             green_below = last['TDI_Green'] <= last['TDI_Red']
-            near_sma_short = price <= (last['SMA50'] * 1.01)
+            # 3. Le prix est strictement en dessous de la SMA 50
+            strict_sma_short = price < last['SMA50']
             
-            if red_cross_down and green_below and near_sma_short:
-                sl_price = recent_high * 1.001  # SL juste au-dessus du dernier sommet
+            if red_cross_down and green_below and strict_sma_short:
+                sl_price = recent_high * 1.001  # SL au-dessus du dernier sommet
                 sl_distance = sl_price - price
                 
                 if sl_distance <= 0:
