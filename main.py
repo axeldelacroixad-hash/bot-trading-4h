@@ -16,6 +16,7 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT
+TAKE_PROFIT = 2
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
@@ -113,11 +114,14 @@ def scan_markets():
             strict_sma_long = price > last['SMA50']
             
             if red_cross_up and green_above and strict_sma_long:
-                sl_price = recent_low * 0.999  # SL sous le dernier creux
+                sl_price = recent_low * 0.995  # SL sous le dernier creux
                 sl_distance = price - sl_price
                 
                 if sl_distance <= 0:
                     continue
+                    
+                # calcul TAKE_PROFIT_€
+                take_profit = ((price - sl_price) * TAKE_PROFIT) + price
                 
                 # Calcul de la position
                 position_size = (RISK_AMOUNT / sl_distance) * price
@@ -134,7 +138,8 @@ def scan_markets():
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
-                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
+                    f"• TP : {take_profit:.3f}\n"
+                    f"• Montant engagé : {position_size:.2f} € "
                 )
                 opportunities.append(msg)
 
@@ -147,7 +152,7 @@ def scan_markets():
             strict_sma_short = price < last['SMA50']
             
             if red_cross_down and green_below and strict_sma_short:
-                sl_price = recent_high * 1.001  # SL au-dessus du dernier sommet
+                sl_price = recent_high * 1.005  # SL au-dessus du dernier sommet
                 sl_distance = sl_price - price
                 
                 if sl_distance <= 0:
@@ -167,7 +172,7 @@ def scan_markets():
                     f"• Signal : **SHORT (Vente)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Sommet) : {sl_price:.3f}\n"
-                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
+                    f"• Montant engagé : {position_size:.2f} € "
                 )
                 opportunities.append(msg)
                 
