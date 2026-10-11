@@ -76,14 +76,6 @@ def add_tdi_indicators(df):
     # SMA 50 pour le filtre de prix
     df['SMA50'] = df['Close'].rolling(window=50).mean()
     
-    # ATR (14) pour le Stop Loss
-    high_low = df['High'] - df['Low']
-    high_close = (df['High'] - df['Close'].shift()).abs()
-    low_close = (df['Low'] - df['Close'].shift()).abs()
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    df['ATR'] = true_range.rolling(window=14).mean()
-    
     return df
 
 def scan_markets():
@@ -98,7 +90,6 @@ def scan_markets():
             if df.empty or len(df) < 50:
                 continue
             
-            # Nettoyage des index multi-niveaux si présents dans yfinance
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
                 
@@ -108,20 +99,29 @@ def scan_markets():
             prev = df.iloc[-2]
             
             price = float(last['Close'])
-            atr = float(last['ATR'])
             
-            if pd.isna(atr) or atr == 0:
-                continue
+            # Recherche du dernier creux ou sommet sur les 5 dernières bougies pour le SL
+            recent_low = df['Low'].iloc[-5:].min()
+            recent_high = df['High'].iloc[-5:].max()
 
-            # --- CONDITION LONG (ACHAT) ---
-            cross_up = (prev['TDI_Green'] <= prev['TDI_Red']) and (last['TDI_Green'] > last['TDI_Red'])
-            trend_long = last['TDI_Red'] >= last['TDI_Yellow']
+            # --- CONDITION LONG (ACHAT) : La ligne Rouge croise la Jaune vers le haut, Verte au-dessus ---
+            red_cross_up = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
+            green_above = last['TDI_Green'] >= last['TDI_Red']
             near_sma_long = price >= (last['SMA50'] * 0.99)
             
-            if cross_up and trend_long and near_sma_long:
-                sl_distance = atr * 1.5
-                sl_price = price - sl_distance  # SL en dessous pour un LONG
+            if red_cross_up and green_above and near_sma_long:
+                sl_price = recent_low * 0.999  # SL juste sous le dernier creux
+                sl_distance = price - sl_price
+                
+                if sl_distance <= 0:
+                    continue
+                
+                # Calcul de la position pour 1% de risque
                 position_size = (RISK_AMOUNT / sl_distance) * price
+                
+                # Plafond strict sans effet de levier (max capital = 10 000 €)
+                if position_size > CAPITAL:
+                    position_size = CAPITAL
                 
                 msg = (
                     f"🟢 *{now_str}* | *{symbol}* | **{info['name']}**\n"
@@ -130,20 +130,28 @@ def scan_markets():
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
-                    f"• Stop Loss : {sl_price:.3f}\n"
-                    f"• Position (1%) : {position_size:.2f} €"
+                    f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
+                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
 
-            # --- CONDITION SHORT (VENTE) ---
-            cross_down = (prev['TDI_Green'] >= prev['TDI_Red']) and (last['TDI_Green'] < last['TDI_Red'])
-            trend_short = last['TDI_Red'] <= last['TDI_Yellow']
+            # --- CONDITION SHORT (VENTE) : La ligne Rouge croise la Jaune vers le bas, Verte en dessous ---
+            red_cross_down = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
+            green_below = last['TDI_Green'] <= last['TDI_Red']
             near_sma_short = price <= (last['SMA50'] * 1.01)
             
-            if cross_down and trend_short and near_sma_short:
-                sl_distance = atr * 1.5
-                sl_price = price + sl_distance  # SL au-dessus pour un SHORT
+            if red_cross_down and green_below and near_sma_short:
+                sl_price = recent_high * 1.001  # SL juste au-dessus du dernier sommet
+                sl_distance = sl_price - price
+                
+                if sl_distance <= 0:
+                    continue
+                
                 position_size = (RISK_AMOUNT / sl_distance) * price
+                
+                # Plafond strict sans effet de levier
+                if position_size > CAPITAL:
+                    position_size = CAPITAL
                 
                 msg = (
                     f"🔴 *{now_str}* | *{symbol}* | **{info['name']}**\n"
@@ -152,15 +160,14 @@ def scan_markets():
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : **SHORT (Vente)**\n"
                     f"• Prix actuel : {price:.3f}\n"
-                    f"• Stop Loss : {sl_price:.3f}\n"
-                    f"• Position (1%) : {position_size:.2f} €"
+                    f"• Stop Loss (Dernier Sommet) : {sl_price:.3f}\n"
+                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
                 
         except Exception as e:
             print(f"Erreur sur {symbol}: {e}")
             
-    # Envoi des alertes trouvées
     if opportunities:
         for alert in opportunities:
             send_telegram_message(alert)
@@ -175,7 +182,6 @@ def run_bot_loop():
             scan_markets()
         except Exception as e:
             print(f"Erreur dans la boucle du bot : {e}")
-        # Attend 4 heures avant le prochain scan
         time.sleep(4 * 3600)
 
 @app.route('/')
@@ -185,13 +191,11 @@ def home():
 @app.route('/test-scan')
 def test_scan():
     scan_markets()
-    return "Scan manuel exécuté avec succès ! Vérifie ton Telegram."
+    return "Scan manuel exécuté avec succès !"
 
 if __name__ == '__main__':
-    # Lancement du thread de fond pour le scan des marchés
     t = threading.Thread(target=run_bot_loop, daemon=True)
     t.start()
     
-    # Lancement de l'application Flask pour Render
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
