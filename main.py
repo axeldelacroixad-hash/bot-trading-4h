@@ -16,7 +16,6 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT
-TAKE_PROFIT = 1.5
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
@@ -58,11 +57,16 @@ def send_telegram_message(message):
         print(f"Erreur d'envoi Telegram : {e}")
 
 def add_tdi_indicators(df):
-    # Calcul du RSI (Période 13)
+    # Calcul du RSI avec la méthode de lissage de Wilder (RMA / EWM) pour correspondre à TradingView (Période 13)
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=13).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=13).mean()
-    rs = gain / loss
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    
+    # Lissage de Wilder (alpha = 1 / période)
+    avg_gain = gain.ewm(alpha=1/13, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/13, adjust=False).mean()
+    
+    rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     
     # Ligne Verte (Price Line - Période 2)
@@ -74,7 +78,7 @@ def add_tdi_indicators(df):
     # Ligne Jaune (Middle Band / Baseline - Période 34)
     df['TDI_Yellow'] = rsi.rolling(window=34).mean()
     
-    # SMA 50 pour le filtre de tendance
+    # SMA 50 pour le filtre de tendance sur le prix
     df['SMA50'] = df['Close'].rolling(window=50).mean()
     
     return df
@@ -106,7 +110,7 @@ def scan_markets():
             recent_high = df['High'].iloc[-5:].max()
 
             # --- CONDITION LONG (ACHAT) ---
-            # 1. La ligne Rouge croise la Jaune vers le haut
+            # 1. La ligne Rouge croise la Jaune vers le haut (de manière fraîche)
             red_cross_up = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
             # 2. La ligne Verte est au-dessus ou égale à la Rouge
             green_above = last['TDI_Green'] >= last['TDI_Red']
@@ -114,17 +118,11 @@ def scan_markets():
             strict_sma_long = price > last['SMA50']
             
             if red_cross_up and green_above and strict_sma_long:
-                sl_price = recent_low * 0.995  # SL sous le dernier creux
+                sl_price = recent_low * 0.999  # SL sous le dernier creux
                 sl_distance = price - sl_price
                 
                 if sl_distance <= 0:
                     continue
-                    
-                # calcul TAKE_PROFIT_€
-                take_profit = ((price - sl_price) * TAKE_PROFIT) + price
-
-                # calcul du nb d'action a prendre
-                nb_de_tips = RISK_AMOUNT / sl_distance
                 
                 # Calcul de la position
                 position_size = (RISK_AMOUNT / sl_distance) * price
@@ -141,14 +139,12 @@ def scan_markets():
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
-                    f"• TP : {take_profit:.3f}\n" €
-                    f"• Nb de tics : *{nb_de_tips:.3f}*\n"
-                    f"• Montant engagé : {position_size:.2f} € "
+                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
 
             # --- CONDITION SHORT (VENTE) ---
-            # 1. La ligne Rouge croise la Jaune vers le bas
+            # 1. La ligne Rouge croise la Jaune vers le bas (de manière fraîche)
             red_cross_down = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
             # 2. La ligne Verte est en dessous ou égale à la Rouge
             green_below = last['TDI_Green'] <= last['TDI_Red']
@@ -156,7 +152,7 @@ def scan_markets():
             strict_sma_short = price < last['SMA50']
             
             if red_cross_down and green_below and strict_sma_short:
-                sl_price = recent_high * 1.005  # SL au-dessus du dernier sommet
+                sl_price = recent_high * 1.001  # SL au-dessus du dernier sommet
                 sl_distance = sl_price - price
                 
                 if sl_distance <= 0:
@@ -176,7 +172,7 @@ def scan_markets():
                     f"• Signal : **SHORT (Vente)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Sommet) : {sl_price:.3f}\n"
-                    f"• Montant engagé : {position_size:.2f} € "
+                    f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
                 
