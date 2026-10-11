@@ -16,6 +16,7 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT
+RISQUE_DU_TRADE = 1.5
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
@@ -118,7 +119,7 @@ def scan_markets():
             strict_sma_long = price > last['SMA50']
             
             if red_cross_up and green_above and strict_sma_long:
-                sl_price = recent_low * 0.999
+                sl_price = recent_low * 0.995
                 sl_distance = price - sl_price
                 
                 if sl_distance <= 0:
@@ -136,6 +137,9 @@ def scan_markets():
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
+                    f"• Prix TP : price * RISQUE_DU_TRADE
+                    f"• Nb d'unités : (RISK_AMOUNT / (price - sl_price))\n"
+                    f"• Total Trade € : (RISK_AMOUNT / (price - sl_price)) * price\n"
                     f"• Montant engagé : {position_size:.2f} € (Sans levier)"
                 )
                 opportunities.append(msg)
