@@ -15,45 +15,64 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
-RISK_AMOUNT = CAPITAL * RISK_PCT
+RISK_AMOUNT = CAPITAL * RISK_PCT  # 100 € de risque
 RISQUE_DU_TRADE = 2
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
-# Liste nettoyée des 26 actifs (sans ^SX8P)
+# Liste nettoyée des 26 actifs
 ASSETS = {
     # --- Forex & Actifs de base ---
-    "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)", "tv": "FX:EURUSD"},
-    "GBPUSD=X": {"name": "GBP/USD", "country": "Royaume-Uni / États-Unis", "sector": "Forex (Devises)", "tv": "FX:GBPUSD"},
-    "USDJPY=X": {"name": "USD/JPY", "country": "États-Unis / Japon", "sector": "Forex (Devises)", "tv": "FX:USDJPY"},
-    "AUDUSD=X": {"name": "AUD/USD", "country": "Australie / États-Unis", "sector": "Forex (Devises)", "tv": "FX:AUDUSD"},
-    "USDCAD=X": {"name": "USD/CAD", "country": "États-Unis / Canada", "sector": "Forex (Devises)", "tv": "FX:USDCAD"},
-    "EURJPY=X": {"name": "EUR/JPY", "country": "Zone Euro / Japon", "sector": "Forex (Devises)", "tv": "FX:EURJPY"},
-    "GBPJPY=X": {"name": "GBP/JPY", "country": "Royaume-Uni / Japon", "sector": "Forex (Devises)", "tv": "FX:GBPJPY"},
-    "GLD": {"name": "Or (ETF Gold)", "country": "Mondial", "sector": "Matières Premières (Metaux)", "tv": "AMEX:GLD"},
-    "USO": {"name": "Pétrole (ETF USO)", "country": "États-Unis / Mondial", "sector": "Matières Premières (Énergie)", "tv": "AMEX:USO"},
-    "BTC-USD": {"name": "Bitcoin", "country": "Mondial", "sector": "Cryptomonnaie", "tv": "BINANCE:BTCUSDT"},
-    "ETH-USD": {"name": "Ethereum", "country": "Mondial", "sector": "Cryptomonnaie", "tv": "BINANCE:ETHUSDT"},
+    "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)", "tv": "FX:EURUSD", "currency": "USD"},
+    "GBPUSD=X": {"name": "GBP/USD", "country": "Royaume-Uni / États-Unis", "sector": "Forex (Devises)", "tv": "FX:GBPUSD", "currency": "USD"},
+    "USDJPY=X": {"name": "USD/JPY", "country": "États-Unis / Japon", "sector": "Forex (Devises)", "tv": "FX:USDJPY", "currency": "JPY"},
+    "AUDUSD=X": {"name": "AUD/USD", "country": "Australie / États-Unis", "sector": "Forex (Devises)", "tv": "FX:AUDUSD", "currency": "USD"},
+    "USDCAD=X": {"name": "USD/CAD", "country": "États-Unis / Canada", "sector": "Forex (Devises)", "tv": "FX:USDCAD", "currency": "CAD"},
+    "EURJPY=X": {"name": "EUR/JPY", "country": "Zone Euro / Japon", "sector": "Forex (Devises)", "tv": "FX:EURJPY", "currency": "JPY"},
+    "GBPJPY=X": {"name": "GBP/JPY", "country": "Royaume-Uni / Japon", "sector": "Forex (Devises)", "tv": "FX:GBPJPY", "currency": "JPY"},
+    "GLD": {"name": "Or (ETF Gold)", "country": "Mondial", "sector": "Matières Premières (Metaux)", "tv": "AMEX:GLD", "currency": "USD"},
+    "USO": {"name": "Pétrole (ETF USO)", "country": "États-Unis / Mondial", "sector": "Matières Premières (Énergie)", "tv": "AMEX:USO", "currency": "USD"},
+    "BTC-USD": {"name": "Bitcoin", "country": "Mondial", "sector": "Cryptomonnaie", "tv": "BINANCE:BTCUSDT", "currency": "USD"},
+    "ETH-USD": {"name": "Ethereum", "country": "Mondial", "sector": "Cryptomonnaie", "tv": "BINANCE:ETHUSDT", "currency": "USD"},
     
     # --- Indices boursiers ---
-    "^FCHI": {"name": "CAC 40", "country": "France", "sector": "Indices boursiers", "tv": "EURONEXT:PX1"},
-    "^GDAXI": {"name": "DAX 40", "country": "Allemagne", "sector": "Indices boursiers", "tv": "XAYR:GER40"},
-    "^FTSE": {"name": "FTSE 100", "country": "Royaume-Uni", "sector": "Indices boursiers", "tv": "TVC:UKX"},
-    "^SPX": {"name": "S&P 500", "country": "États-Unis", "sector": "Indices boursiers", "tv": "SP:SPX"},
-    "^NDX": {"name": "Nasdaq 100", "country": "États-Unis", "sector": "Indices boursiers", "tv": "NASDAQ:NDX"},
-    "^N225": {"name": "Nikkei 225", "country": "Japon", "sector": "Indices boursiers", "tv": "TVC:NI225"},
-    "^DJI": {"name": "Dow Jones Industrial", "country": "États-Unis", "sector": "Indices boursiers", "tv": "DJ:DJI"},
-    "^RUT": {"name": "Russell 2000", "country": "États-Unis", "sector": "Indices boursiers", "tv": "TVC:RUT"},
-    "^STOXX50E": {"name": "Euro Stoxx 50", "country": "Zone Euro", "sector": "Indices boursiers", "tv": "STOXX:SX5E"},
-    "^AXJO": {"name": "S&P/ASX 200", "country": "Australie", "sector": "Indices boursiers", "tv": "ASX:XJO"},
-    "^HSI": {"name": "Hang Seng Index", "country": "Hong Kong / Asie", "sector": "Indices boursiers", "tv": "HSI:HSI"},
+    "^FCHI": {"name": "CAC 40", "country": "France", "sector": "Indices boursiers", "tv": "EURONEXT:PX1", "currency": "EUR"},
+    "^GDAXI": {"name": "DAX 40", "country": "Allemagne", "sector": "Indices boursiers", "tv": "XAYR:GER40", "currency": "EUR"},
+    "^FTSE": {"name": "FTSE 100", "country": "Royaume-Uni", "sector": "Indices boursiers", "tv": "TVC:UKX", "currency": "GBP"},
+    "^SPX": {"name": "S&P 500", "country": "États-Unis", "sector": "Indices boursiers", "tv": "SP:SPX", "currency": "USD"},
+    "^NDX": {"name": "Nasdaq 100", "country": "États-Unis", "sector": "Indices boursiers", "tv": "NASDAQ:NDX", "currency": "USD"},
+    "^N225": {"name": "Nikkei 225", "country": "Japon", "sector": "Indices boursiers", "tv": "TVC:NI225", "currency": "JPY"},
+    "^DJI": {"name": "Dow Jones Industrial", "country": "États-Unis", "sector": "Indices boursiers", "tv": "DJ:DJI", "currency": "USD"},
+    "^RUT": {"name": "Russell 2000", "country": "États-Unis", "sector": "Indices boursiers", "tv": "TVC:RUT", "currency": "USD"},
+    "^STOXX50E": {"name": "Euro Stoxx 50", "country": "Zone Euro", "sector": "Indices boursiers", "tv": "STOXX:SX5E", "currency": "EUR"},
+    "^AXJO": {"name": "S&P/ASX 200", "country": "Australie", "sector": "Indices boursiers", "tv": "ASX:XJO", "currency": "AUD"},
+    "^HSI": {"name": "Hang Seng Index", "country": "Hong Kong / Asie", "sector": "Indices boursiers", "tv": "HSI:HSI", "currency": "HKD"},
 
     # --- Secteurs Technologiques ---
-    "^TWII": {"name": "Taiwan Weighted", "country": "Taïwan", "sector": "Technologie & Semi-conducteurs", "tv": "TWSE:TAIEX"},
-    "^KS11": {"name": "KOSPI", "country": "Corée du Sud", "sector": "Technologie & Électronique", "tv": "KRX:KOSPI"},
-    "^SOX": {"name": "Philadelphia Semiconductor", "country": "États-Unis", "sector": "Technologie (Semi-conducteurs)", "tv": "NASDAQ:SOX"},
-    "XLK": {"name": "Technology Select Sector", "country": "États-Unis", "sector": "Technologie (Software/Hardware)", "tv": "AMEX:XLK"}
+    "^TWII": {"name": "Taiwan Weighted", "country": "Taïwan", "sector": "Technologie & Semi-conducteurs", "tv": "TWSE:TAIEX", "currency": "TWD"},
+    "^KS11": {"name": "KOSPI", "country": "Corée du Sud", "sector": "Technologie & Électronique", "tv": "KRX:KOSPI", "currency": "KRW"},
+    "^SOX": {"name": "Philadelphia Semiconductor", "country": "États-Unis", "sector": "Technologie (Semi-conducteurs)", "tv": "NASDAQ:SOX", "currency": "USD"},
+    "XLK": {"name": "Technology Select Sector", "country": "États-Unis", "sector": "Technologie (Software/Hardware)", "tv": "AMEX:XLK", "currency": "USD"}
 }
+
+def get_eur_conversion_rate(asset_currency):
+    """Récupère le taux de change pour convertir la devise de l'actif en Euros (€)"""
+    if asset_currency == "EUR":
+        return 1.0
+    try:
+        pair = f"EUR{asset_currency}=X"
+        df_curr = yf.download(pair, period="5d", progress=False)
+        if not df_curr.empty:
+            if isinstance(df_curr.columns, pd.MultiIndex):
+                df_curr.columns = df_curr.columns.get_level_values(0)
+            rate_eur_to_target = float(df_curr['Close'].iloc[-1])
+            return 1.0 / rate_eur_to_target
+    except Exception:
+        pass
+    
+    # Valeurs de secours approximatives
+    fallbacks = {"USD": 1.08, "JPY": 165.0, "GBP": 0.85, "CAD": 1.48, "AUD": 1.65, "HKD": 8.4, "TWD": 35.0, "KRW": 1450.0}
+    return 1.0 / fallbacks.get(asset_currency, 1.0)
 
 def send_telegram_message(message, reply_markup=None):
     if not TOKEN or not CHAT_ID:
@@ -115,11 +134,12 @@ def scan_markets():
             prev = df.iloc[-2]
             
             price = float(last['Close'])
-            
             recent_low = df['Low'].iloc[-5:].min()
             recent_high = df['High'].iloc[-5:].max()
 
-            # Bounding box / boutons Telegram pour TradingView
+            asset_curr = info.get("currency", "USD")
+            eur_per_unit_currency = get_eur_conversion_rate(asset_curr)
+
             tv_symbol = info.get("tv", symbol)
             keyboard = {
                 "inline_keyboard": [
@@ -141,11 +161,13 @@ def scan_markets():
                 if sl_distance <= 0:
                     continue
                 
-                position_size = (RISK_AMOUNT / sl_distance) * price
-                nb_unite = RISK_AMOUNT / sl_distance
+                nb_unite = RISK_AMOUNT / (sl_distance * eur_per_unit_currency)
+                total_trade_eur = nb_unite * price * eur_per_unit_currency
+                
+                if total_trade_eur > CAPITAL:
+                    total_trade_eur = CAPITAL
+                
                 take_profit = price + (sl_distance * RISQUE_DU_TRADE)
-                if position_size > CAPITAL:
-                    position_size = CAPITAL
                 
                 msg = (
                     f"🟢 *{now_str}* | *{symbol}* | **{info['name']}**\n"
@@ -154,9 +176,11 @@ def scan_markets():
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
-                    f"• Stop Loss (Dernier Creux) : {sl_price:.3f}\n"
+                    f"• Stop Loss : {sl_price:.3f}\n"
                     f"• Prix TP : {take_profit:.3f}\n"
                     f"• Nb d'unités : *{nb_unite:.3f}*\n"
+                    f"• Risque : 100.00 € (1%)\n"
+                    f"• Montant Total : *{total_trade_eur:.2f} €*\n"
                 )
                 opportunities.append((msg, keyboard))
 
@@ -172,12 +196,13 @@ def scan_markets():
                 if sl_distance <= 0:
                     continue
                 
-                position_size = (RISK_AMOUNT / sl_distance) * price
-                nb_unite = RISK_AMOUNT / sl_distance
-                take_profit = price - (sl_distance * RISQUE_DU_TRADE)
+                nb_unite = RISK_AMOUNT / (sl_distance * eur_per_unit_currency)
+                total_trade_eur = nb_unite * price * eur_per_unit_currency
                 
-                if position_size > CAPITAL:
-                    position_size = CAPITAL
+                if total_trade_eur > CAPITAL:
+                    total_trade_eur = CAPITAL
+                
+                take_profit = price - (sl_distance * RISQUE_DU_TRADE)
                 
                 msg = (
                     f"🔴 *{now_str}* | *{symbol}* | **{info['name']}**\n"
@@ -186,9 +211,11 @@ def scan_markets():
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : **SHORT (Vente)**\n"
                     f"• Prix actuel : {price:.3f}\n"
-                    f"• Stop Loss (Dernier Sommet) : {sl_price:.3f}\n"
+                    f"• Stop Loss : {sl_price:.3f}\n"
                     f"• Prix TP : {take_profit:.3f}\n"
                     f"• Nb d'unités : *{nb_unite:.3f}*\n"
+                    f"• Risque : 100.00 € (1%)\n"
+                    f"• Montant Total : *{total_trade_eur:.2f} €*\n"
                 )
                 opportunities.append((msg, keyboard))
                 
@@ -211,40 +238,38 @@ def run_bot_loop():
             scan_markets()
         except Exception as e:
             print(f"Erreur dans la boucle du bot : {e}")
-        time.sleep(4 * 3600)
+            
+        # Calcul intelligent pour se réveiller pile à la prochaine bougie 4H (+ 2 min)
+        now = datetime.now(PARIS_TZ)
+        current_hour = now.hour
+        target_hours = [0, 4, 8, 12, 16, 20]
+        
+        next_hour = None
+        for h in target_hours:
+            if h > current_hour or (h == current_hour and now.minute < 2):
+                next_hour = h
+                break
+                
+        if next_hour is None:
+            next_target = now.replace(hour=0, minute=2, second=0, microsecond=0) + pd.Timedelta(days=1)
+        else:
+            next_target = now.replace(hour=next_hour, minute=2, second=0, microsecond=0)
+            
+        if next_target <= now:
+            next_target = now + pd.Timedelta(hours=4)
+            
+        sleep_seconds = (next_target - now).total_seconds()
+        print(f"Prochain scan prévu à : {next_target.strftime('%H:%M:%S')} (dans {int(sleep_seconds/60)} minutes)")
+        time.sleep(sleep_seconds)
 
 @app.route('/')
 def home():
-    return "Le bot de trading swing 4H est en ligne et actif !"
+    return "Le bot de trading swing 4H est en ligne, synchronisé et actif !"
 
 @app.route('/test-scan')
 def test_scan():
     scan_markets()
     return "Scan manuel exécuté avec succès !"
-
-@app.route('/test-calc/<symbol>')
-def test_calculation(symbol):
-    try:
-        df = yf.download(symbol.upper(), period="30d", interval="4h", progress=False)
-        if df.empty:
-            return f"Erreur : Impossible de récupérer les données pour {symbol}"
-        
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
-        df = add_tdi_indicators(df)
-        
-        last_rows = df.tail(3)[['Close', 'SMA50', 'TDI_Green', 'TDI_Red', 'TDI_Yellow']].to_html(classes='table table-striped')
-        
-        html_output = f"""
-        <h2>Résultats du calcul TDI pour : {symbol.upper()}</h2>
-        <p>Voici les dernières valeurs calculées par le bot :</p>
-        {last_rows}
-        <br><a href="/">Retour à l'accueil</a>
-        """
-        return html_output
-    except Exception as e:
-        return f"Erreur lors du calcul : {str(e)}"
 
 if __name__ == '__main__':
     t = threading.Thread(target=run_bot_loop, daemon=True)
