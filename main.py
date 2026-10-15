@@ -16,7 +16,8 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 CAPITAL = 10000.0  # Capital en €
 RISK_PCT = 0.01    # Risque de 1% par trade
 RISK_AMOUNT = CAPITAL * RISK_PCT  # 100 € de risque
-RISQUE_DU_TRADE = 2
+RISQUE_DU_TRADE_TP1 = 2  # Ratio pour le TP 1 (50%)
+RISQUE_DU_TRADE_TP2 = 4  # Ratio pour le TP 2 (50% restant)
 
 PARIS_TZ = pytz.timezone('Europe/Paris')
 
@@ -56,7 +57,6 @@ ASSETS = {
 }
 
 def get_eur_conversion_rate(asset_currency):
-    """Récupère le taux de change pour convertir la devise de l'actif en Euros (€)"""
     if asset_currency == "EUR":
         return 1.0
     try:
@@ -70,7 +70,6 @@ def get_eur_conversion_rate(asset_currency):
     except Exception:
         pass
     
-    # Valeurs de secours approximatives
     fallbacks = {"USD": 1.08, "JPY": 165.0, "GBP": 0.85, "CAD": 1.48, "AUD": 1.65, "HKD": 8.4, "TWD": 35.0, "KRW": 1450.0}
     return 1.0 / fallbacks.get(asset_currency, 1.0)
 
@@ -167,7 +166,8 @@ def scan_markets():
                 if total_trade_eur > CAPITAL:
                     total_trade_eur = CAPITAL
                 
-                take_profit = price + (sl_distance * RISQUE_DU_TRADE)
+                take_profit_1 = price + (sl_distance * RISQUE_DU_TRADE_TP1)
+                take_profit_2 = price + (sl_distance * RISQUE_DU_TRADE_TP2)
                 
                 msg = (
                     f"🟢 *{now_str}* | *{symbol}* | **{info['name']}**\n"
@@ -177,8 +177,9 @@ def scan_markets():
                     f"• Signal : **LONG (Achat)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss : {sl_price:.3f}\n"
-                    f"• Prix TP : {take_profit:.3f}\n"
-                    f"• Nb d'unités : *{nb_unite:.3f}*\n"
+                    f"• Take Profit 1 (50%) : {take_profit_1:.3f}\n"
+                    f"• Take Profit 2 (50%) : {take_profit_2:.3f}\n"
+                    f"• Nb d'unités total : *{nb_unite:.3f}*\n"
                     f"• Risque : 100.00 € (1%)\n"
                     f"• Montant Total : *{total_trade_eur:.2f} €*\n"
                 )
@@ -202,7 +203,8 @@ def scan_markets():
                 if total_trade_eur > CAPITAL:
                     total_trade_eur = CAPITAL
                 
-                take_profit = price - (sl_distance * RISQUE_DU_TRADE)
+                take_profit_1 = price - (sl_distance * RISQUE_DU_TRADE_TP1)
+                take_profit_2 = price - (sl_distance * RISQUE_DU_TRADE_TP2)
                 
                 msg = (
                     f"🔴 *{now_str}* | *{symbol}* | **{info['name']}**\n"
@@ -212,8 +214,9 @@ def scan_markets():
                     f"• Signal : **SHORT (Vente)**\n"
                     f"• Prix actuel : {price:.3f}\n"
                     f"• Stop Loss : {sl_price:.3f}\n"
-                    f"• Prix TP : {take_profit:.3f}\n"
-                    f"• Nb d'unités : *{nb_unite:.3f}*\n"
+                    f"• Take Profit 1 (50%) : {take_profit_1:.3f}\n"
+                    f"• Take Profit 2 (50%) : {take_profit_2:.3f}\n"
+                    f"• Nb d'unités total : *{nb_unite:.3f}*\n"
                     f"• Risque : 100.00 € (1%)\n"
                     f"• Montant Total : *{total_trade_eur:.2f} €*\n"
                 )
@@ -239,7 +242,6 @@ def run_bot_loop():
         except Exception as e:
             print(f"Erreur dans la boucle du bot : {e}")
             
-        # Calcul intelligent pour se réveiller pile à la prochaine bougie 4H (+ 2 min)
         now = datetime.now(PARIS_TZ)
         current_hour = now.hour
         target_hours = [0, 4, 8, 12, 16, 20]
@@ -264,7 +266,7 @@ def run_bot_loop():
 
 @app.route('/')
 def home():
-    return "Le bot de trading swing 4H est en ligne, synchronisé et actif !"
+    return "Le bot de trading swing 4H est en ligne, synchronisé et actif avec TP 1 & TP 2 !"
 
 @app.route('/test-scan')
 def test_scan():
