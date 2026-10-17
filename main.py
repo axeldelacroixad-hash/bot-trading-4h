@@ -1,281 +1,230 @@
 import os
 import time
-from datetime import datetime
-import pytz
+import requests
+import numpy as np
 import pandas as pd
 import yfinance as yf
-from flask import Flask
-import threading
-import requests
 
-app = Flask(__name__)
+# ==========================================
+# 1. CONFIGURATION & PARAMÈTRES GÉNÉRAUX
+# ==========================================
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "TON_TOKEN_TELEGRAM_ICI")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "TON_CHAT_ID_ICI")
 
-# --- CONFIGURATION ---
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-CAPITAL = 10000.0  # Capital en €
-RISK_PCT = 0.01    # Risque de 1% par trade
-RISK_AMOUNT = CAPITAL * RISK_PCT  # 100 € de risque
-RISQUE_DU_TRADE_TP1 = 2  # Ratio pour le TP 1 (50%)
-RISQUE_DU_TRADE_TP2 = 4  # Ratio pour le TP 2 (50% restant)
+CAPITAL_EUR = 10000.0  # Capital de départ en EUR
+RISK_PERCENT = 0.01    # 1% de risque par trade (100 €)
 
-PARIS_TZ = pytz.timezone('Europe/Paris')
-
-# Liste nettoyée des 26 actifs
+# Liste des 26 actifs suivis
 ASSETS = {
-    # --- Forex & Actifs de base ---
-    "EURUSD=X": {"name": "EUR/USD", "country": "Zone Euro / États-Unis", "sector": "Forex (Devises)", "tv": "FX:EURUSD", "currency": "USD"},
-    "GBPUSD=X": {"name": "GBP/USD", "country": "Royaume-Uni / États-Unis", "sector": "Forex (Devises)", "tv": "FX:GBPUSD", "currency": "USD"},
-    "USDJPY=X": {"name": "USD/JPY", "country": "États-Unis / Japon", "sector": "Forex (Devises)", "tv": "FX:USDJPY", "currency": "JPY"},
-    "AUDUSD=X": {"name": "AUD/USD", "country": "Australie / États-Unis", "sector": "Forex (Devises)", "tv": "FX:AUDUSD", "currency": "USD"},
-    "USDCAD=X": {"name": "USD/CAD", "country": "États-Unis / Canada", "sector": "Forex (Devises)", "tv": "FX:USDCAD", "currency": "CAD"},
-    "EURJPY=X": {"name": "EUR/JPY", "country": "Zone Euro / Japon", "sector": "Forex (Devises)", "tv": "FX:EURJPY", "currency": "JPY"},
-    "GBPJPY=X": {"name": "GBP/JPY", "country": "Royaume-Uni / Japon", "sector": "Forex (Devises)", "tv": "FX:GBPJPY", "currency": "JPY"},
-    "GLD": {"name": "Or (ETF Gold)", "country": "Mondial", "sector": "Matières Premières (Metaux)", "tv": "AMEX:GLD", "currency": "USD"},
-    "USO": {"name": "Pétrole (ETF USO)", "country": "États-Unis / Mondial", "sector": "Matières Premières (Énergie)", "tv": "AMEX:USO", "currency": "USD"},
-    "BTC-USD": {"name": "Bitcoin", "country": "Mondial", "sector": "Cryptomonnaie", "tv": "BINANCE:BTCUSDT", "currency": "USD"},
-    "ETH-USD": {"name": "Ethereum", "country": "Mondial", "sector": "Cryptomonnaie", "tv": "BINANCE:ETHUSDT", "currency": "USD"},
+    # Forex
+    "EURUSD=X": {"name": "EUR/USD", "tv_symbol": "FX:EURUSD", "base_ccy": "USD"},
+    "GBPUSD=X": {"name": "GBP/USD", "tv_symbol": "FX:GBPUSD", "base_ccy": "USD"},
+    "USDJPY=X": {"name": "USD/JPY", "tv_symbol": "FX:USDJPY", "base_ccy": "JPY"},
+    "GBPJPY=X": {"name": "GBP/JPY", "tv_symbol": "FX:GBPJPY", "base_ccy": "JPY"},
+    "AUDUSD=X": {"name": "AUD/USD", "tv_symbol": "FX:AUDUSD", "base_ccy": "USD"},
+    "USDCAD=X": {"name": "USD/CAD", "tv_symbol": "FX:USDCAD", "base_ccy": "CAD"},
+    "USDCHF=X": {"name": "USD/CHF", "tv_symbol": "FX:USDCHF", "base_ccy": "CHF"},
+    "EURGBP=X": {"name": "EUR/GBP", "tv_symbol": "FX:EURGBP", "base_ccy": "GBP"},
+    "EURJPY=X": {"name": "EUR/JPY", "tv_symbol": "FX:EURJPY", "base_ccy": "JPY"},
     
-    # --- Indices boursiers ---
-    "^FCHI": {"name": "CAC 40", "country": "France", "sector": "Indices boursiers", "tv": "EURONEXT:PX1", "currency": "EUR"},
-    "^GDAXI": {"name": "DAX 40", "country": "Allemagne", "sector": "Indices boursiers", "tv": "XAYR:GER40", "currency": "EUR"},
-    "^FTSE": {"name": "FTSE 100", "country": "Royaume-Uni", "sector": "Indices boursiers", "tv": "TVC:UKX", "currency": "GBP"},
-    "^SPX": {"name": "S&P 500", "country": "États-Unis", "sector": "Indices boursiers", "tv": "SP:SPX", "currency": "USD"},
-    "^NDX": {"name": "Nasdaq 100", "country": "États-Unis", "sector": "Indices boursiers", "tv": "NASDAQ:NDX", "currency": "USD"},
-    "^N225": {"name": "Nikkei 225", "country": "Japon", "sector": "Indices boursiers", "tv": "TVC:NI225", "currency": "JPY"},
-    "^DJI": {"name": "Dow Jones Industrial", "country": "États-Unis", "sector": "Indices boursiers", "tv": "DJ:DJI", "currency": "USD"},
-    "^RUT": {"name": "Russell 2000", "country": "États-Unis", "sector": "Indices boursiers", "tv": "TVC:RUT", "currency": "USD"},
-    "^STOXX50E": {"name": "Euro Stoxx 50", "country": "Zone Euro", "sector": "Indices boursiers", "tv": "STOXX:SX5E", "currency": "EUR"},
-    "^AXJO": {"name": "S&P/ASX 200", "country": "Australie", "sector": "Indices boursiers", "tv": "ASX:XJO", "currency": "AUD"},
-    "^HSI": {"name": "Hang Seng Index", "country": "Hong Kong / Asie", "sector": "Indices boursiers", "tv": "HSI:HSI", "currency": "HKD"},
+    # Indices
+    "^GSPC":    {"name": "S&P 500", "tv_symbol": "SPX", "base_ccy": "USD"},
+    "^IXIC":    {"name": "Nasdaq 100", "tv_symbol": "NDX", "base_ccy": "USD"},
+    "^DJI":     {"name": "Dow Jones 30", "tv_symbol": "DJI", "base_ccy": "USD"},
+    "^GDAXI":   {"name": "DAX 40", "tv_symbol": "XETR:DAX", "base_ccy": "EUR"},
+    "^FCHI":    {"name": "CAC 40", "tv_symbol": "TVC:PX1", "base_ccy": "EUR"},
+    "^FTSE":    {"name": "FTSE 100", "tv_symbol": "TVC:UKX", "base_ccy": "GBP"},
+    "^AXJO":    {"name": "S&P/ASX 200", "tv_symbol": "ASX:XJO", "base_ccy": "AUD"},
 
-    # --- Secteurs Technologiques ---
-    "^TWII": {"name": "Taiwan Weighted", "country": "Taïwan", "sector": "Technologie & Semi-conducteurs", "tv": "TWSE:TAIEX", "currency": "TWD"},
-    "^KS11": {"name": "KOSPI", "country": "Corée du Sud", "sector": "Technologie & Électronique", "tv": "KRX:KOSPI", "currency": "KRW"},
-    "^SOX": {"name": "Philadelphia Semiconductor", "country": "États-Unis", "sector": "Technologie (Semi-conducteurs)", "tv": "NASDAQ:SOX", "currency": "USD"},
-    "XLK": {"name": "Technology Select Sector", "country": "États-Unis", "sector": "Technologie (Software/Hardware)", "tv": "AMEX:XLK", "currency": "USD"}
+    # Commodities
+    "GC=F":     {"name": "Gold (Or)", "tv_symbol": "OANDA:XAUUSD", "base_ccy": "USD"},
+    "CL=F":     {"name": "WTI Crude Oil", "tv_symbol": "TVC:USOIL", "base_ccy": "USD"},
+
+    # Cryptomonnaies
+    "BTC-USD":  {"name": "Bitcoin", "tv_symbol": "BINANCE:BTCUSDT", "base_ccy": "USD"},
+    "ETH-USD":  {"name": "Ethereum", "tv_symbol": "BINANCE:ETHUSDT", "base_ccy": "USD"},
+    "SOL-USD":  {"name": "Solana", "tv_symbol": "BINANCE:SOLUSDT", "base_ccy": "USD"},
+
+    # Actions Tech
+    "AAPL":     {"name": "Apple", "tv_symbol": "NASDAQ:AAPL", "base_ccy": "USD"},
+    "NVDA":     {"name": "Nvidia", "tv_symbol": "NASDAQ:NVDA", "base_ccy": "USD"},
+    "TSLA":     {"name": "Tesla", "tv_symbol": "NASDAQ:TSLA", "base_ccy": "USD"},
+    "MSFT":     {"name": "Microsoft", "tv_symbol": "NASDAQ:MSFT", "base_ccy": "USD"},
+    "AMZN":     {"name": "Amazon", "tv_symbol": "NASDAQ:AMZN", "base_ccy": "USD"}
 }
 
-def get_eur_conversion_rate(asset_currency):
-    if asset_currency == "EUR":
-        return 1.0
-    try:
-        pair = f"EUR{asset_currency}=X"
-        df_curr = yf.download(pair, period="5d", progress=False)
-        if not df_curr.empty:
-            if isinstance(df_curr.columns, pd.MultiIndex):
-                df_curr.columns = df_curr.columns.get_level_values(0)
-            rate_eur_to_target = float(df_curr['Close'].iloc[-1])
-            return 1.0 / rate_eur_to_target
-    except Exception:
-        pass
-    
-    fallbacks = {"USD": 1.08, "JPY": 165.0, "GBP": 0.85, "CAD": 1.48, "AUD": 1.65, "HKD": 8.4, "TWD": 35.0, "KRW": 1450.0}
-    return 1.0 / fallbacks.get(asset_currency, 1.0)
 
-def send_telegram_message(message, reply_markup=None):
-    if not TOKEN or not CHAT_ID:
-        print("Erreur : Token ou Chat ID Telegram manquant.")
+# ==========================================
+# 2. FONCTIONS DE CALCUL TECHNIQUE & TDI
+# ==========================================
+def calculate_tdi(df: pd.DataFrame, rsi_period=13, band_period=34, fast_sma=2, slow_sma=7) -> pd.DataFrame:
+    """
+    Calcule l'indicateur Traders Dynamic Index (TDI) :
+    - Ligne Verte (Fast Trade Signal)
+    - Ligne Rouge (Slow Trade Signal)
+    - Ligne Jaune (Market Base Line)
+    """
+    # RSI
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+    rs = gain / (loss + 1e-10)
+    rsi = 100 - (100 / (1 + rs))
+
+    # Bandes Bollinger sur le RSI
+    mb = rsi.rolling(window=band_period).mean()
+    std = rsi.rolling(window=band_period).std()
+
+    # TDI Lines
+    df['TDI_Green'] = rsi.rolling(window=fast_sma).mean()
+    df['TDI_Red'] = rsi.rolling(window=slow_sma).mean()
+    df['TDI_Yellow'] = mb
+
+    return df
+
+
+def find_recent_swing_low(df: pd.DataFrame, max_lookback: int = 15) -> float:
+    """
+    OPTION B : Cherche le vrai creux Swing Low le plus proche.
+    Remonte la série temporelle pour identifier une bougie dont le bas
+    est plus bas que ses deux bougies adjacentes.
+    """
+    if len(df) < max_lookback + 2:
+        return df['Low'].tail(max_lookback).min()
+
+    # Parcourt de la dernière bougie clôturée en remontant dans le passé
+    for i in range(len(df) - 2, len(df) - max_lookback, -1):
+        low_current = df['Low'].iloc[i]
+        low_prev = df['Low'].iloc[i - 1]
+        low_next = df['Low'].iloc[i + 1]
+
+        # Structure de vrai creux pivot
+        if low_current < low_prev and low_current < low_next:
+            return low_current
+
+    # Sécurité si aucun pivot n'est nettement identifié dans la fenêtre
+    return df['Low'].iloc[-max_lookback:].min()
+
+
+# ==========================================
+# 3. NOTIFICATION TELEGRAM
+# ==========================================
+def send_telegram_alert(message: str):
+    """Envoie une notification formatée via Telegram."""
+    if TELEGRAM_TOKEN == "TON_TOKEN_TELEGRAM_ICI":
+        print("[MOCK TELEGRAM]\n" + message)
         return
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
 
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": False
+    }
     try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"Erreur d'envoi Telegram : {e}")
 
-def add_tdi_indicators(df):
-    delta = df['Close'].diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+
+# ==========================================
+# 4. ANALYSE DU SIGNAL SUR UN ACTIF
+# ==========================================
+def analyze_asset(symbol: str, meta: dict):
+    """Télécharge les données, analyse le setup et génère l'alerte si valide."""
+    try:
+        # Téléchargement des données 4H
+        df = yf.download(symbol, period="30d", interval="1h", progress=False)
+        if df.empty or len(df) < 50:
+            return
+
+        # Resample en 4H si nécessaire ou traitement direct
+        df = df.resample('4h').agg({
+            'Open': 'first',
+            'High': 'max',
+            'Low': 'min',
+            'Close': 'last',
+            'Volume': 'sum'
+        }).dropna()
+
+        # Calcul de la SMA 50 et du TDI
+        df['SMA50'] = df['Close'].rolling(window=50).mean()
+        df = calculate_tdi(df)
+
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # --- VALIDATION DES CONDITIONS ---
+        # 1. Tendance : Clôture courante supérieure à la SMA 50
+        above_sma50 = last['Close'] > last['SMA50']
+
+        # 2. Dynamique TDI : Ligne Verte supérieure ou égale à la Rouge
+        green_above_red = last['TDI_Green'] >= last['TDI_Red']
+
+        # 3. Trigger : Nouveau croisement de la ligne Rouge sur la Jaune
+        red_crossed_yellow = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
+
+        if above_sma50 and green_above_red and red_crossed_yellow:
+            entry_price = float(last['Close'])
+
+            # Calcul du Stop Loss avec Option B (Swing Low)
+            swing_low = find_recent_swing_low(df, max_lookback=15)
+            sl_price = swing_low * 0.995  # Marge de 0.5%
+            sl_distance = entry_price - sl_price
+
+            if sl_distance <= 0:
+                return
+
+            # Calcul des Take Profits (TP1 2:1 / TP2 4:1)
+            tp1_price = entry_price + (sl_distance * 2.0)
+            tp2_price = entry_price + (sl_distance * 4.0)
+
+            # Calcul du position sizing (1% de risque soit 100€)
+            risk_amount_eur = CAPITAL_EUR * RISK_PERCENT
+            position_units = risk_amount_eur / sl_distance
+
+            # Lien direct TradingView
+            tv_url = f"https://www.tradingview.com/chart/?symbol={meta['tv_symbol']}"
+
+            # Construction du message Telegram
+            msg = (
+                f"🚨 *SIGNAL DE TRADING 4H (LONG)* 🚨\n\n"
+                f"📊 *Actif* : {meta['name']} (`{symbol}`)\n"
+                f"💵 *Prix d'entrée* : `{entry_price:.4f}`\n"
+                f"🛑 *Stop Loss* : `{sl_price:.4f}` (Creux Swing : {swing_low:.4f})\n\n"
+                f"🎯 *Take Profit 1 (2:1)* : `{tp1_price:.4f}` (Fermer 50%)\n"
+                f"🎯 *Take Profit 2 (4:1)* : `{tp2_price:.4f}` (Fermer 50%)\n\n"
+                f"📐 *Risque engagé* : {risk_amount_eur:.2f} € (1%)\n"
+                f"📦 *Taille indicative* : `{position_units:.2f}` unités\n\n"
+                f"🔗 [Ouvrir le graphique TradingView]({tv_url})"
+            )
+
+            send_telegram_alert(msg)
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Signal envoyé pour {meta['name']}")
+
+    except Exception as e:
+        print(f"Erreur d'analyse sur {symbol} : {e}")
+
+
+# ==========================================
+# 5. BOUCLE DE PLANIFICATION (BOUCLE DE 4H)
+# ==========================================
+def run_bot():
+    """Lance le scan automatique aligné sur la fin des bougies 4H (+2 min buffer)."""
+    print("🤖 Bot 4H démarré avec succès. Scan en cours...")
     
-    avg_gain = gain.ewm(alpha=1/13, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/13, adjust=False).mean()
-    
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    
-    df['TDI_Green'] = rsi.rolling(window=2).mean()
-    df['TDI_Red'] = rsi.rolling(window=7).mean()
-    df['TDI_Yellow'] = rsi.rolling(window=34).mean()
-    df['SMA50'] = df['Close'].rolling(window=50).mean()
-    
-    return df
-
-def scan_markets():
-    print("--- DÉBUT DU SCAN DES MARCHÉS (4H) ---")
-    opportunities = []
-    now_str = datetime.now(PARIS_TZ).strftime("%d/%m/%Y-%H:%M")
-    
-    for symbol, info in ASSETS.items():
-        try:
-            df = yf.download(symbol, period="60d", interval="4h", progress=False)
-            time.sleep(1.5)
-            
-            if df.empty or len(df) < 50:
-                print(f"Pas assez de données ou échec pour {symbol}")
-                continue
-            
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-                
-            df = add_tdi_indicators(df)
-            
-            last = df.iloc[-1]
-            prev = df.iloc[-2]
-            
-            price = float(last['Close'])
-            recent_low = df['Low'].iloc[-5:].min()
-            recent_high = df['High'].iloc[-5:].max()
-
-            asset_curr = info.get("currency", "USD")
-            eur_per_unit_currency = get_eur_conversion_rate(asset_curr)
-
-            tv_symbol = info.get("tv", symbol)
-            keyboard = {
-                "inline_keyboard": [
-                    [
-                        {"text": "📊 Ouvrir sur TradingView", "url": f"https://www.tradingview.com/chart/?symbol={tv_symbol}"}
-                    ]
-                ]
-            }
-
-            # --- CONDITION LONG (ACHAT) ---
-            red_cross_up = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
-            green_above = last['TDI_Green'] >= last['TDI_Red']
-            strict_sma_long = price > last['SMA50']
-            
-            if red_cross_up and green_above and strict_sma_long:
-                sl_price = recent_low * 0.995
-                sl_distance = price - sl_price
-                
-                if sl_distance <= 0:
-                    continue
-                
-                nb_unite = RISK_AMOUNT / (sl_distance * eur_per_unit_currency)
-                total_trade_eur = nb_unite * price * eur_per_unit_currency
-                
-                if total_trade_eur > CAPITAL:
-                    total_trade_eur = CAPITAL
-                
-                take_profit_1 = price + (sl_distance * RISQUE_DU_TRADE_TP1)
-                take_profit_2 = price + (sl_distance * RISQUE_DU_TRADE_TP2)
-                
-                msg = (
-                    f"🟢 *{now_str}* | *{symbol}* | **{info['name']}**\n"
-                    f"🌍 **Région :** {info['country']}\n"
-                    f"🏢 **Secteur :** {info['sector']}\n"
-                    f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"• Signal : **LONG (Achat)**\n"
-                    f"• Prix actuel : {price:.3f}\n"
-                    f"• Stop Loss : {sl_price:.3f}\n"
-                    f"• Take Profit 1 (50%) : {take_profit_1:.3f}\n"
-                    f"• Take Profit 2 (50%) : {take_profit_2:.3f}\n"
-                    f"• Nb d'unités total : *{nb_unite:.3f}*\n"
-                    f"• Risque : 100.00 € (1%)\n"
-                    f"• Montant Total : *{total_trade_eur:.2f} €*\n"
-                )
-                opportunities.append((msg, keyboard))
-
-            # --- CONDITION SHORT (VENTE) ---
-            red_cross_down = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
-            green_below = last['TDI_Green'] <= last['TDI_Red']
-            strict_sma_short = price < last['SMA50']
-            
-            if red_cross_down and green_below and strict_sma_short:
-                sl_price = recent_high * 1.001
-                sl_distance = sl_price - price
-                
-                if sl_distance <= 0:
-                    continue
-                
-                nb_unite = RISK_AMOUNT / (sl_distance * eur_per_unit_currency)
-                total_trade_eur = nb_unite * price * eur_per_unit_currency
-                
-                if total_trade_eur > CAPITAL:
-                    total_trade_eur = CAPITAL
-                
-                take_profit_1 = price - (sl_distance * RISQUE_DU_TRADE_TP1)
-                take_profit_2 = price - (sl_distance * RISQUE_DU_TRADE_TP2)
-                
-                msg = (
-                    f"🔴 *{now_str}* | *{symbol}* | **{info['name']}**\n"
-                    f"🌍 **Région :** {info['country']}\n"
-                    f"🏢 **Secteur :** {info['sector']}\n"
-                    f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"• Signal : **SHORT (Vente)**\n"
-                    f"• Prix actuel : {price:.3f}\n"
-                    f"• Stop Loss : {sl_price:.3f}\n"
-                    f"• Take Profit 1 (50%) : {take_profit_1:.3f}\n"
-                    f"• Take Profit 2 (50%) : {take_profit_2:.3f}\n"
-                    f"• Nb d'unités total : *{nb_unite:.3f}*\n"
-                    f"• Risque : 100.00 € (1%)\n"
-                    f"• Montant Total : *{total_trade_eur:.2f} €*\n"
-                )
-                opportunities.append((msg, keyboard))
-                
-        except Exception as e:
-            print(f"Erreur sur {symbol}: {e}")
-            
-    if opportunities:
-        for alert_msg, reply_markup in opportunities:
-            send_telegram_message(alert_msg, reply_markup=reply_markup)
-            time.sleep(1)
-    else:
-        send_telegram_message(f"⚪ *{now_str}* | Scan 4H terminé : Aucun signal valide sur les 26 actifs.")
-        print("Aucun signal détecté lors de ce scan.")
-        
-    print("--- FIN DU SCAN ---")
-
-def run_bot_loop():
     while True:
-        try:
-            scan_markets()
-        except Exception as e:
-            print(f"Erreur dans la boucle du bot : {e}")
-            
-        now = datetime.now(PARIS_TZ)
-        current_hour = now.hour
-        target_hours = [0, 4, 8, 12, 16, 20]
+        print(f"\n--- Début du scan : {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
+        for symbol, meta in ASSETS.items():
+            analyze_asset(symbol, meta)
+            time.sleep(1)  # Petite pause pour respecter les quotas d'API
         
-        next_hour = None
-        for h in target_hours:
-            if h > current_hour or (h == current_hour and now.minute < 2):
-                next_hour = h
-                break
-                
-        if next_hour is None:
-            next_target = now.replace(hour=0, minute=2, second=0, microsecond=0) + pd.Timedelta(days=1)
-        else:
-            next_target = now.replace(hour=next_hour, minute=2, second=0, microsecond=0)
-            
-        if next_target <= now:
-            next_target = now + pd.Timedelta(hours=4)
-            
-        sleep_seconds = (next_target - now).total_seconds()
-        print(f"Prochain scan prévu à : {next_target.strftime('%H:%M:%S')} (dans {int(sleep_seconds/60)} minutes)")
-        time.sleep(sleep_seconds)
+        print("--- Scan terminé. Attente du prochain cycle 4H ---")
+        
+        # Pause de 4 heures (14 400 secondes)
+        time.sleep(14400)
 
-@app.route('/')
-def home():
-    return "Le bot de trading swing 4H est en ligne, synchronisé et actif avec TP 1 & TP 2 !"
 
-@app.route('/test-scan')
-def test_scan():
-    scan_markets()
-    return "Scan manuel exécuté avec succès !"
-
-if __name__ == '__main__':
-    t = threading.Thread(target=run_bot_loop, daemon=True)
-    t.start()
-    
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    run_bot()
