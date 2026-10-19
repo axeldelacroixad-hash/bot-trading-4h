@@ -28,16 +28,12 @@ def health():
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "TON_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "TON_CHAT_ID")
 
-CAPITAL_TOTAL = 10000.0  # Capital de référence en €
-RISK_PERCENT = 1.0        # 1% de risque par trade (100 €)
+CAPITAL_TOTAL = 10000.0  
+RISK_PERCENT = 1.0        
 
-# Fuseau horaire des alertes (heure française)
-TZ = timezone(timedelta(hours=1))  # CET ; passe à +2 en été si besoin
-
-# Fichier de persistance de l'anti-doublon (survit aux redémarrages)
-STATE_FILE = os.environ.get("STATE_FILE", "bot_state.json")
-SCAN_OFFSET_MIN = 2   # minutes après la clôture 4H (laisse Yahoo publier)
-MAX_RETRIES = 3       # retries sur erreur yfinance
+TZ = timezone(timedelta(hours=1))  
+STATE_FILE = "bot_state.json"
+MAX_RETRIES = 3
 
 LAST_SCAN_INFO = {}
 
@@ -48,10 +44,12 @@ def now_local():
 
 def load_state():
     try:
-        with open(STATE_FILE, "r") as f:
-            return json.load(f)
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
     except Exception:
-        return {}
+        pass
+    return {}
 
 
 def save_state(state):
@@ -97,7 +95,7 @@ ASSETS = {
     "FX:EURGBP": {"yf": "EURGBP=X", "name": "EUR/GBP", "reg": "Europe / Royaume-Uni", "sec": "Forex (Devises)"},
     "FX:EURJPY": {"yf": "EURJPY=X", "name": "EUR/JPY", "reg": "Europe / Japon", "sec": "Forex (Devises)"},
     "SPX": {"yf": "^GSPC", "name": "S&P 500", "reg": "États-Unis", "sec": "Indices Boursiers"},
-    "NDX": {"yf": "^NDX", "name": "Nasdaq 100", "reg": "États-Unis", "sec": "Indices Boursiers"},
+    "NDX": {"yf": "^IXIC", "name": "Nasdaq 100", "reg": "États-Unis", "sec": "Indices Boursiers"},
     "DJI": {"yf": "^DJI", "name": "Dow Jones", "reg": "États-Unis", "sec": "Indices Boursiers"},
     "XETR:DAX": {"yf": "^GDAXI", "name": "DAX 40", "reg": "Allemagne", "sec": "Indices Boursiers"},
     "TVC:PX1": {"yf": "^FCHI", "name": "CAC 40", "reg": "France", "sec": "Indices Boursiers"},
@@ -115,16 +113,12 @@ ASSETS = {
     "NASDAQ:AMZN": {"yf": "AMZN", "name": "Amazon", "reg": "États-Unis", "sec": "Actions Tech US"},
 }
 
-# ==============================================================================
-# 2. PARAMÈTRES TECHNIQUES
-# ==============================================================================
 TIMEFRAME = "4h"
 RSI_LEN, BAND_LEN, BAND_MULT = 13, 34, 1.6185
 PRICE_LEN, SIGNAL_LEN, SMA_LEN = 2, 7, 50
 SWING_LOOKBACK = 10
-TP1_RATIO, TP2_RATIO = 1.0, 2.0  # TP1 = 1R, TP2 = 2R
+TP1_RATIO, TP2_RATIO = 1.0, 2.0  
 
-# Anti-doublon persistant : {tv_name: timestamp bougie signalée}
 last_signaled_candle = load_state()
 
 
@@ -148,23 +142,18 @@ def calculate_tdi_and_sma(df):
     return df
 
 
-def download_data(symbol, period="6mo"):
-    """Téléchargement avec retry simple (rate limiting Yahoo)."""
+def download_data(symbol):
     for attempt in range(MAX_RETRIES):
         try:
-            df = yf.download(symbol, period=period, interval=TIMEFRAME,
-                             progress=False, auto_adjust=False)
+            df = yf.download(symbol, period="60d", interval=TIMEFRAME, progress=False, auto_adjust=False)
             if not df.empty:
                 return df
         except Exception as e:
-            print(f"Tentative {attempt + 1}/{MAX_RETRIES} échouée sur {symbol} : {e}")
-        time.sleep(2 * (attempt + 1))
+            print(f"Tentative {attempt + 1} échouée sur {symbol} : {e}")
+        time.sleep(1)
     return None
 
 
-# ==============================================================================
-# 3. ANALYSE & CALCUL DE TAILLE DE POSITION
-# ==============================================================================
 def analyze_asset(tv_name, info):
     try:
         df = download_data(info["yf"])
@@ -175,9 +164,6 @@ def analyze_asset(tv_name, info):
             df.columns = df.columns.get_level_values(0)
 
         df = calculate_tdi_and_sma(df)
-
-        # --- IMPORTANT : on ignore la dernière bougie (potentiellement
-        # en cours) et on travaille sur les bougies CLÔTURÉES ---
         closed = df.iloc[:-1]
         if len(closed) < (SMA_LEN + SWING_LOOKBACK + 5):
             return None
@@ -187,14 +173,16 @@ def analyze_asset(tv_name, info):
 
         candle_time = pd.Timestamp(closed.index[-1]).isoformat()
         if last_signaled_candle.get(tv_name) == candle_time:
-            return None  # Anti-doublon (persisté entre redémarrages)
+            return None  
 
         close_curr = float(curr["Close"])
 
         cross_up = (float(prev["TDI_Signal"]) <= float(prev["TDI_Basis"])) and (
-            float(curr["TDI_Signal"]) > float(curr["TDI_Basis"]))
+            float(curr["TDI_Signal"]) > float(curr["TDI_Basis"])
+        )
         cross_down = (float(prev["TDI_Signal"]) >= float(prev["TDI_Basis"])) and (
-            float(curr["TDI_Signal"]) < float(curr["TDI_Basis"]))
+            float(curr["TDI_Signal"]) < float(curr["TDI_Basis"])
+        )
 
         long_signal = (
             cross_up
@@ -208,7 +196,6 @@ def analyze_asset(tv_name, info):
         )
 
         if long_signal or short_signal:
-            # Swing sur les bougies clôturées, SANS la bougie du signal
             window = closed.iloc[-(SWING_LOOKBACK + 2):-1]
             if long_signal:
                 sl = float(window["Low"].min())
@@ -231,8 +218,7 @@ def analyze_asset(tv_name, info):
                 save_state(last_signaled_candle)
 
                 return {
-                    "date": now_local().strftime("%d/%m/%Y %H:%M"),
-                    "candle": pd.Timestamp(closed.index[-1]).strftime("%d/%m %H:%M UTC"),
+                    "date": now_local().strftime("%d/%m/%Y-%H:%M"),
                     "symbol": info["yf"],
                     "name": info["name"],
                     "reg": info["reg"],
@@ -249,37 +235,17 @@ def analyze_asset(tv_name, info):
                     "capital": CAPITAL_TOTAL,
                     "tv_symbol": tv_name,
                 }
-
     except Exception as e:
         print(f"Erreur sur {tv_name} : {e}")
 
     return None
 
 
-# ==============================================================================
-# 4. SCHEDULING ALIGNÉ SUR LES BOUGIES 4H
-# ==============================================================================
-def seconds_until_next_4h_close():
-    """Temps jusqu'à la prochaine clôture de bougie 4H (UTC) + offset."""
-    now = datetime.now(timezone.utc)
-    next_close = (now.replace(minute=0, second=0, microsecond=0)
-                  + timedelta(hours=4))
-    # Arrondi au multiple de 4h de l'heure courante
-    next_close = now.replace(minute=0, second=0, microsecond=0) + timedelta(
-        hours=4 - (now.hour % 4))
-    delta = (next_close - now).total_seconds() + SCAN_OFFSET_MIN * 60
-    return max(delta, 30)  # sécurité : minimum 30 s
-
-
 def run_bot_loop():
-    # Attend la prochaine clôture 4H avant le premier scan
-    # (évite d'analyser une bougie à moitié formée au démarrage)
-    first_wait = seconds_until_next_4h_close()
-    print(f"Démarrage bot. Premier scan dans {first_wait / 60:.1f} min.")
-    time.sleep(first_wait)
-
+    print("🤖 Bot démarré avec succès. Lancement du premier scan immédiat...")
+    
     while True:
-        now_str = now_local().strftime("%d/%m/%Y %H:%M")
+        now_str = now_local().strftime("%d/%m/%Y-%H:%M")
         print(f"\n--- Scan 4H exécuté le {now_str} ---")
 
         signals_found = 0
@@ -293,16 +259,13 @@ def run_bot_loop():
                     f"🏢 Secteur : {res['sec']}\n"
                     "━━━━━━━━━━━━━━━━━━━\n"
                     f"• Signal : {res['action']}\n"
-                    f"• Bougie clôturée : {res['candle']}\n"
-                    f"• Prix d'entrée : {res['price']:.3f}\n"
+                    f"• Prix actuel : {res['price']:.3f}\n"
                     f"• Stop Loss : {res['sl']:.3f}\n"
-                    f"• Take Profit 1 ({TP1_RATIO:.0f}R, fermer 50%) : {res['tp1']:.3f}\n"
-                    f"• Take Profit 2 ({TP2_RATIO:.0f}R, fermer 50%) : {res['tp2']:.3f}\n"
-                    f"• Taille indicative* : {res['units']:.3f} unités\n"
-                    f"• Risque max : {res['risk_amount']:.2f} € ({res['risk_pct']:.0f}%)\n"
-                    f"• Capital de référence : {res['capital']:.2f} €\n"
-                    "\n*Taille indicative : vérifie la conversion de devise "
-                    "pour les paires non quotées en EUR."
+                    f"• Take Profit 1 (50%) : {res['tp1']:.3f}\n"
+                    f"• Take Profit 2 (50%) : {res['tp2']:.3f}\n"
+                    f"• Nb d'unités total : {res['units']:.3f}\n"
+                    f"• Risque : {res['risk_amount']:.2f} € ({res['risk_pct']:.0f}%)\n"
+                    f"• Montant Total : {res['capital']:.2f} €"
                 )
                 send_telegram_message(msg, tv_symbol=res["tv_symbol"])
                 print(f"🎯 Signal envoyé pour {res['symbol']}")
@@ -313,24 +276,15 @@ def run_bot_loop():
         LAST_SCAN_INFO["signals"] = signals_found
 
         if signals_found == 0:
-            msg_status = (
-                f"⚪ {now_str} | Scan 4H terminé : "
-                f"Aucun signal valide sur les {len(ASSETS)} actifs."
-            )
+            msg_status = f"⚪ {now_str} | Scan 4H terminé : Aucun signal valide sur les {len(ASSETS)} actifs."
             send_telegram_message(msg_status)
-            print("Aucun signal détecté.")
+            print("Aucun signal détecté sur ce cycle.")
 
-        # Attente jusqu'à la PROCHAINE clôture 4H (pas un sleep fixe)
-        time.sleep(seconds_until_next_4h_close())
+        # Pause fixe de 4 heures pour relancer proprement le scan au prochain cycle 4H
+        print("\n💤 Fin du scan. Prochaine vérification dans 4 heures.")
+        time.sleep(4 * 3600)
 
 
-# ==============================================================================
-# 5. LANCEMENT
-# ==============================================================================
-# Lancé au niveau module (et non dans __main__) pour que le bot tourne
-# aussi sous Gunicorn (ex: gunicorn app:app).
-# ⚠️ Utilise IMPÉRATIVEMENT un seul worker (--workers 1) sinon
-# tu recevras les alertes en double.
 _bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
 _bot_thread.start()
 
