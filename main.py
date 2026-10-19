@@ -7,110 +7,231 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-# Initialisation du serveur web pour Render
 app = Flask(__name__)
 
 
 @app.route("/")
 def home():
-  return "Bot Trading 4H TDI est actif et opérationnel !", 200
+  return "Bot Trading 4H TDI est actif !", 200
 
 
 # ==============================================================================
-# 1. CONFIGURATION TELEGRAM
+# 1. CONFIGURATION TELEGRAM & MÉTADONNÉES
 # ==============================================================================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "TON_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "TON_CHAT_ID")
 
+# Paramètres du Capital pour la gestion du risque
+CAPITAL_TOTAL = 10000.0  # Ton capital total en €
+RISK_PERCENT = 1.0  # 1% de risque par trade (ex: 100.00 €)
 
-def send_telegram_message(message):
-  """Fonction pour envoyer l'alerte sur ton téléphone via Telegram"""
+
+def send_telegram_message(message, tv_symbol=None):
   if TELEGRAM_BOT_TOKEN == "TON_BOT_TOKEN":
     print("⚠️ Token Telegram non configuré.")
     return
+
   url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
   payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+
+  # Bouton vert TradingView sous le message
+  if tv_symbol:
+    payload["reply_markup"] = {
+        "inline_keyboard": [[{
+            "text": "📊 Ouvrir sur TradingView",
+            "url": f"https://www.tradingview.com/chart/?symbol={tv_symbol}",
+        }]]
+    }
+
   try:
     response = requests.post(url, json=payload)
     if response.status_code != 200:
-      print(f"Erreur d'envoi Telegram : {response.text}")
+      print(f"Erreur Telegram : {response.text}")
   except Exception as e:
     print(f"Erreur connexion Telegram : {e}")
 
 
-# ==============================================================================
-# 2. LISTE COMPLETE DES 26 ACTIFS
-# ==============================================================================
 ASSETS = {
-    # Forex
-    "FX:EURUSD": "EURUSD=X",
-    "FX:GBPUSD": "GBPUSD=X",
-    "FX:USDJPY": "USDJPY=X",
-    "FX:GBPJPY": "GBPJPY=X",
-    "FX:AUDUSD": "AUDUSD=X",
-    "FX:USDCAD": "USDCAD=X",
-    "FX:USDCHF": "USDCHF=X",
-    "FX:EURGBP": "EURGBP=X",
-    "FX:EURJPY": "EURJPY=X",
-    # Indices
-    "SPX": "^GSPC",
-    "NDX": "^IXIC",
-    "DJI": "^DJI",
-    "XETR:DAX": "^GDAXI",
-    "TVC:PX1": "^FCHI",
-    "TVC:UKX": "^FTSE",
-    "ASX:XJO": "^AXJO",
-    # Commodities
-    "OANDA:XAUUSD": "GC=F",
-    "TVC:USOIL": "CL=F",
-    # Crypto
-    "BINANCE:BTCUSDT": "BTC-USD",
-    "BINANCE:ETHUSDT": "ETH-USD",
-    "BINANCE:SOLUSDT": "SOL-USD",
-    # Tech Equities
-    "NASDAQ:AAPL": "AAPL",
-    "NASDAQ:NVDA": "NVDA",
-    "NASDAQ:TSLA": "TSLA",
-    "NASDAQ:MSFT": "MSFT",
-    "NASDAQ:AMZN": "AMZN",
+    "FX:EURUSD": {
+        "yf": "EURUSD=X",
+        "name": "EUR/USD",
+        "reg": "Europe / US",
+        "sec": "Forex (Devises)",
+    },
+    "FX:GBPUSD": {
+        "yf": "GBPUSD=X",
+        "name": "GBP/USD",
+        "reg": "Royaume-Uni / US",
+        "sec": "Forex (Devises)",
+    },
+    "FX:USDJPY": {
+        "yf": "USDJPY=X",
+        "name": "USD/JPY",
+        "reg": "US / Japon",
+        "sec": "Forex (Devises)",
+    },
+    "FX:GBPJPY": {
+        "yf": "GBPJPY=X",
+        "name": "GBP/JPY",
+        "reg": "Royaume-Uni / Japon",
+        "sec": "Forex (Devises)",
+    },
+    "FX:AUDUSD": {
+        "yf": "AUDUSD=X",
+        "name": "AUD/USD",
+        "reg": "Australie / US",
+        "sec": "Forex (Devises)",
+    },
+    "FX:USDCAD": {
+        "yf": "USDCAD=X",
+        "name": "USD/CAD",
+        "reg": "US / Canada",
+        "sec": "Forex (Devises)",
+    },
+    "FX:USDCHF": {
+        "yf": "USDCHF=X",
+        "name": "USD/CHF",
+        "reg": "US / Suisse",
+        "sec": "Forex (Devises)",
+    },
+    "FX:EURGBP": {
+        "yf": "EURGBP=X",
+        "name": "EUR/GBP",
+        "reg": "Europe / Royaume-Uni",
+        "sec": "Forex (Devises)",
+    },
+    "FX:EURJPY": {
+        "yf": "EURJPY=X",
+        "name": "EUR/JPY",
+        "reg": "Europe / Japon",
+        "sec": "Forex (Devises)",
+    },
+    "SPX": {
+        "yf": "^GSPC",
+        "name": "S&P 500",
+        "reg": "États-Unis",
+        "sec": "Indices Boursiers",
+    },
+    "NDX": {
+        "yf": "^IXIC",
+        "name": "Nasdaq 100",
+        "reg": "États-Unis",
+        "sec": "Indices Boursiers",
+    },
+    "DJI": {
+        "yf": "^DJI",
+        "name": "Dow Jones",
+        "reg": "États-Unis",
+        "sec": "Indices Boursiers",
+    },
+    "XETR:DAX": {
+        "yf": "^GDAXI",
+        "name": "DAX 40",
+        "reg": "Allemagne",
+        "sec": "Indices Boursiers",
+    },
+    "TVC:PX1": {
+        "yf": "^FCHI",
+        "name": "CAC 40",
+        "reg": "France",
+        "sec": "Indices Boursiers",
+    },
+    "TVC:UKX": {
+        "yf": "^FTSE",
+        "name": "FTSE 100",
+        "reg": "Royaume-Uni",
+        "sec": "Indices Boursiers",
+    },
+    "ASX:XJO": {
+        "yf": "^AXJO",
+        "name": "ASX 200",
+        "reg": "Australie",
+        "sec": "Indices Boursiers",
+    },
+    "OANDA:XAUUSD": {
+        "yf": "GC=F",
+        "name": "Gold (Or)",
+        "reg": "International",
+        "sec": "Matières Premières",
+    },
+    "TVC:USOIL": {
+        "yf": "CL=F",
+        "name": "Crude Oil",
+        "reg": "International",
+        "sec": "Matières Premières",
+    },
+    "BINANCE:BTCUSDT": {
+        "yf": "BTC-USD",
+        "name": "Bitcoin",
+        "reg": "Crypto",
+        "sec": "Cryptomonnaies",
+    },
+    "BINANCE:ETHUSDT": {
+        "yf": "ETH-USD",
+        "name": "Ethereum",
+        "reg": "Crypto",
+        "sec": "Cryptomonnaies",
+    },
+    "BINANCE:SOLUSDT": {
+        "yf": "SOL-USD",
+        "name": "Solana",
+        "reg": "Crypto",
+        "sec": "Cryptomonnaies",
+    },
+    "NASDAQ:AAPL": {
+        "yf": "AAPL",
+        "name": "Apple",
+        "reg": "États-Unis",
+        "sec": "Actions Tech US",
+    },
+    "NASDAQ:NVDA": {
+        "yf": "NVDA",
+        "name": "Nvidia",
+        "reg": "États-Unis",
+        "sec": "Actions Tech US",
+    },
+    "NASDAQ:TSLA": {
+        "yf": "TSLA",
+        "name": "Tesla",
+        "reg": "États-Unis",
+        "sec": "Actions Tech US",
+    },
+    "NASDAQ:MSFT": {
+        "yf": "MSFT",
+        "name": "Microsoft",
+        "reg": "États-Unis",
+        "sec": "Actions Tech US",
+    },
+    "NASDAQ:AMZN": {
+        "yf": "AMZN",
+        "name": "Amazon",
+        "reg": "États-Unis",
+        "sec": "Actions Tech US",
+    },
 }
 
 # ==============================================================================
-# 3. PARAMÈTRES DE LA STRATÉGIE
+# 2. PARAMÈTRES TECHNIQUES
 # ==============================================================================
 TIMEFRAME = "4h"
-RSI_LEN = 13
-BAND_LEN = 34
-BAND_MULT = 1.6185
-PRICE_LEN = 2
-SIGNAL_LEN = 7
-SMA_LEN = 50
-
+RSI_LEN, BAND_LEN, BAND_MULT = 13, 34, 1.6185
+PRICE_LEN, SIGNAL_LEN, SMA_LEN = 2, 7, 50
 SWING_LOOKBACK = 10
-TP1_RATIO = 1.0  # Premier objectif (50%)
-TP2_RATIO = 2.0  # Deuxième objectif final (50%)
+TP1_RATIO, TP2_RATIO = 1.0, 2.0
+
+last_signaled_candle = {}
 
 
-# ==============================================================================
-# 4. CALCULS TECHNIQUES (RSI WILDER + TDI + SMA 50)
-# ==============================================================================
 def rma(x, n):
-  a = 1 / n
-  return x.ewm(alpha=a, adjust=False).mean()
-
-
-def calculate_rsi_wilder(close_series, length=13):
-  delta = close_series.diff()
-  gain = delta.clip(lower=0)
-  loss = -delta.clip(upper=0)
-  avg_gain = rma(gain, length)
-  avg_loss = rma(loss, length)
-  rs = avg_gain / avg_loss
-  return 100 - (100 / (1 + rs))
+  return x.ewm(alpha=1 / n, adjust=False).mean()
 
 
 def calculate_tdi_and_sma(df):
-  df["RSI"] = calculate_rsi_wilder(df["Close"], RSI_LEN)
+  delta = df["Close"].diff()
+  gain, loss = delta.clip(lower=0), -delta.clip(upper=0)
+  rs = rma(gain, RSI_LEN) / rma(loss, RSI_LEN)
+  df["RSI"] = 100 - (100 / (1 + rs))
+
   df["TDI_Basis"] = df["RSI"].rolling(window=BAND_LEN).mean()
   dev = df["RSI"].rolling(window=BAND_LEN).std() * BAND_MULT
   df["TDI_Up"] = df["TDI_Basis"] + dev
@@ -122,11 +243,11 @@ def calculate_tdi_and_sma(df):
 
 
 # ==============================================================================
-# 5. ANALYSE ET DOUBLE TP (Bougies -2 et -1 en temps réel)
+# 3. ANALYSE & CALCUL DE TAILLE DE POSITION
 # ==============================================================================
-def analyze_asset(tv_name, yf_ticker):
+def analyze_asset(tv_name, info):
   try:
-    df = yf.download(yf_ticker, period="60d", interval=TIMEFRAME, progress=False)
+    df = yf.download(info["yf"], period="60d", interval=TIMEFRAME, progress=False)
     if len(df) < (SMA_LEN + SWING_LOOKBACK + 5):
       return None
 
@@ -135,52 +256,71 @@ def analyze_asset(tv_name, yf_ticker):
 
     df = calculate_tdi_and_sma(df)
 
-    prev = df.iloc[-2]
-    curr = df.iloc[-1]
+    candle_time = df.index[-1]
+    if (
+        tv_name in last_signaled_candle
+        and last_signaled_candle[tv_name] == candle_time
+    ):
+      return None  # Anti-doublon
 
+    prev, curr = df.iloc[-2], df.iloc[-1]
     close_curr = float(curr["Close"])
-    signal_curr = float(curr["TDI_Signal"])  # Rouge
-    basis_curr = float(curr["TDI_Basis"])  # Jaune
-    price_curr = float(curr["TDI_Price"])  # Verte
-    sma50_curr = float(curr["SMA_50"])
 
-    signal_prev = float(prev["TDI_Signal"])
-    basis_prev = float(prev["TDI_Basis"])
-
-    cross_up = (signal_prev <= basis_prev) and (signal_curr > basis_curr)
-    cross_down = (signal_prev >= basis_prev) and (signal_curr < basis_curr)
+    cross_up = (float(prev["TDI_Signal"]) <= float(prev["TDI_Basis"])) and (
+        float(curr["TDI_Signal"]) > float(curr["TDI_Basis"])
+    )
+    cross_down = (float(prev["TDI_Signal"]) >= float(prev["TDI_Basis"])) and (
+        float(curr["TDI_Signal"]) < float(curr["TDI_Basis"])
+    )
 
     long_signal = (
-        cross_up and (price_curr > signal_curr) and (close_curr > sma50_curr)
+        cross_up
+        and (float(curr["TDI_Price"]) > float(curr["TDI_Signal"]))
+        and (close_curr > float(curr["SMA_50"]))
     )
     short_signal = (
-        cross_down and (price_curr < signal_curr) and (close_curr < sma50_curr)
+        cross_down
+        and (float(curr["TDI_Price"]) < float(curr["TDI_Signal"]))
+        and (close_curr < float(curr["SMA_50"]))
     )
 
-    if long_signal:
-      swing_low = float(df["Low"].iloc[-(SWING_LOOKBACK + 2) : -2].min())
-      risk = close_curr - swing_low
-      if risk > 0:
-        return {
-            "symbol": tv_name,
-            "action": "LONG 🟢",
-            "price": close_curr,
-            "sl": swing_low,
-            "tp1": close_curr + (risk * TP1_RATIO),
-            "tp2": close_curr + (risk * TP2_RATIO),
-        }
+    if long_signal or short_signal:
+      if long_signal:
+        sl = float(df["Low"].iloc[-(SWING_LOOKBACK + 2) : -2].min())
+        action, emoji = "LONG (Achat)", "🟢"
+        risk_per_unit = close_curr - sl
+        tp1 = close_curr + (risk_per_unit * TP1_RATIO)
+        tp2 = close_curr + (risk_per_unit * TP2_RATIO)
+      else:
+        sl = float(df["High"].iloc[-(SWING_LOOKBACK + 2) : -2].max())
+        action, emoji = "SHORT (Vente)", "🔴"
+        risk_per_unit = sl - close_curr
+        tp1 = close_curr - (risk_per_unit * TP1_RATIO)
+        tp2 = close_curr - (risk_per_unit * TP2_RATIO)
 
-    elif short_signal:
-      swing_high = float(df["High"].iloc[-(SWING_LOOKBACK + 2) : -2].max())
-      risk = swing_high - close_curr
-      if risk > 0:
+      if risk_per_unit > 0:
+        # Calcul du Risque et Taille de Position
+        risk_amount = CAPITAL_TOTAL * (RISK_PERCENT / 100.0)
+        units = risk_amount / risk_per_unit
+
+        last_signaled_candle[tv_name] = candle_time
         return {
-            "symbol": tv_name,
-            "action": "SHORT 🔴",
+            "date": pd.Timestamp.now().strftime("%d/%m/%Y-%H:%M"),
+            "symbol": info["yf"],
+            "name": info["name"],
+            "reg": info["reg"],
+            "sec": info["sec"],
+            "action": action,
+            "emoji": emoji,
             "price": close_curr,
-            "sl": swing_high,
-            "tp1": close_curr - (risk * TP1_RATIO),
-            "tp2": close_curr - (risk * TP2_RATIO),
+            "sl": sl,
+            "tp1": tp1,
+            "tp2": tp2,
+            "units": units,
+            "risk_amount": risk_amount,
+            "risk_pct": RISK_PERCENT,
+            "capital": CAPITAL_TOTAL,
+            "tv_symbol": tv_name,
         }
 
   except Exception as e:
@@ -190,46 +330,49 @@ def analyze_asset(tv_name, yf_ticker):
 
 
 # ==============================================================================
-# 6. BOUCLE DU BOT AVEC MESSAGE DE DÉMARRAGE DE SCAN
+# 4. BOUCLE DU BOT (Scan aligné sur la bougie 4H)
 # ==============================================================================
 def run_bot_loop():
   while True:
-    timestamp_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"\n--- Scan 4H démarré le {timestamp_str} ---")
-
-    # Message de confirmation sur Telegram pour chaque début de scan
-    send_telegram_message(
-        f"🔄 *Bot 4H : Scan des 26 actifs en cours...* (`{timestamp_str}`)"
-    )
+    now_str = pd.Timestamp.now().strftime("%d/%m/%Y-%H:%M")
+    print(f"\n--- Scan 4H exécuté le {now_str} ---")
 
     signals_found = 0
-    for tv_name, yf_ticker in ASSETS.items():
-      res = analyze_asset(tv_name, yf_ticker)
+    for tv_name, info in ASSETS.items():
+      res = analyze_asset(tv_name, info)
       if res:
         signals_found += 1
         msg = (
-            f"🚨 *NOUVEAU SIGNAL TRADING (4H)* 🚨\n\n"
-            f"🔹 Actif : `{res['symbol']}`\n"
-            f"🔹 Ordre : *{res['action']}*\n"
-            f"🔹 Entrée : `{res['price']:.5f}`\n"
-            f"🔹 Stop Loss : `{res['sl']:.5f}`\n"
-            f"🔹 TP 1 (50%) : `{res['tp1']:.5f}` (1:1)\n"
-            f"🔹 TP 2 (50%) : `{res['tp2']:.5f}` (1:2)"
+            f"{res['emoji']} {res['date']} | {res['symbol']} | {res['name']}\n"
+            f"🌍 Région : {res['reg']}\n"
+            f"🏢 Secteur : {res['sec']}\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            f"• Signal : {res['action']}\n"
+            f"• Prix actuel : {res['price']:.3f}\n"
+            f"• Stop Loss : {res['sl']:.3f}\n"
+            f"• Take Profit 1 (50%) : {res['tp1']:.3f}\n"
+            f"• Take Profit 2 (50%) : {res['tp2']:.3f}\n"
+            f"• Nb d'unités total : {res['units']:.3f}\n"
+            f"• Risque : {res['risk_amount']:.2f} € ({res['risk_pct']:.0f}%)\n"
+            f"• Montant Total : {res['capital']:.2f} €"
         )
-        send_telegram_message(msg)
+        send_telegram_message(msg, tv_symbol=res["tv_symbol"])
         print(f"🎯 Signal envoyé pour {res['symbol']}")
 
-      time.sleep(1)  # Petite pause anti-spam yfinance
+      time.sleep(1)
 
+    # Message statut neutre (comme sur l'image : rond blanc ⚪)
     if signals_found == 0:
-      print("Aucun signal détecté sur ce cycle.")
+      msg_status = f"⚪ {now_str} | Scan 4H terminé : Aucun signal valide sur les {len(ASSETS)} actifs."
+      send_telegram_message(msg_status)
+      print("Aucun signal détecté.")
 
-    print("\n💤 Fin du scan. Prochaine vérification dans 1 heure.")
-    time.sleep(3600)
+    # Pause de 4 heures pour suivre le rythme exact des bougies 4H
+    time.sleep(4 * 3600)
 
 
 # ==============================================================================
-# 7. LANCEMENT
+# 5. LANCEMENT
 # ==============================================================================
 if __name__ == "__main__":
   bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
