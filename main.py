@@ -4,6 +4,7 @@ import time
 from flask import Flask
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 
 # Initialisation du serveur web pour Render
@@ -12,11 +13,34 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Bot Trading 4H TDI est actif !", 200
+  return "Bot Trading 4H TDI est actif et opérationnel !", 200
 
 
 # ==============================================================================
-# 1. LISTE COMPLETE DES 26 ACTIFS (MAPPING YFINANCE / TRADINGVIEW)
+# 1. CONFIGURATION TELEGRAM (Récupérée de ton ancien bot)
+# ==============================================================================
+# Sur Render, tu peux stocker ton Token et ton Chat ID dans les "Environment Variables"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "TON_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "TON_CHAT_ID")
+
+
+def send_telegram_message(message):
+  """Fonction pour envoyer l'alerte sur ton téléphone via Telegram"""
+  if TELEGRAM_BOT_TOKEN == "TON_BOT_TOKEN":
+    print("⚠️ Token Telegram non configuré.")
+    return
+  url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+  payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+  try:
+    response = requests.post(url, json=payload)
+    if response.status_code != 200:
+      print(f"Erreur d'envoi Telegram : {response.text}")
+  except Exception as e:
+    print(f"Erreur connexion Telegram : {e}")
+
+
+# ==============================================================================
+# 2. LISTE COMPLETE DES 26 ACTIFS
 # ==============================================================================
 ASSETS = {
     # Forex
@@ -53,7 +77,7 @@ ASSETS = {
 }
 
 # ==============================================================================
-# 2. PARAMÈTRES ET CONFIGURATION DE LA STRATÉGIE
+# 3. PARAMÈTRES DE LA STRATÉGIE
 # ==============================================================================
 TIMEFRAME = "4h"
 RSI_LEN = 13
@@ -63,13 +87,13 @@ PRICE_LEN = 2
 SIGNAL_LEN = 7
 SMA_LEN = 50
 
-SWING_LOOKBACK = 10  # Fenêtre de recherche Swing Low/High pour le SL
-TP1_RATIO = 1.0  # Ratio pour le premier objectif (sécurisation partielle 50%)
-TP2_RATIO = 2.0  # Ratio pour le deuxième objectif final (50%)
+SWING_LOOKBACK = 10
+TP1_RATIO = 1.0  # Premier objectif (50%)
+TP2_RATIO = 2.0  # Deuxième objectif final (50%)
 
 
 # ==============================================================================
-# 3. CALCULS TECHNIQUES (RSI WILDER + TDI EXACT)
+# 4. CALCULS TECHNIQUES (RSI WILDER + TDI + SMA 50)
 # ==============================================================================
 def rma(x, n):
   a = 1 / n
@@ -99,7 +123,7 @@ def calculate_tdi_and_sma(df):
 
 
 # ==============================================================================
-# 4. ANALYSE STRICTE DES CONDITIONS ET CALCUL DU DOUBLE TP
+# 5. ANALYSE ET DOUBLE TP
 # ==============================================================================
 def analyze_asset(tv_name, yf_ticker):
   try:
@@ -145,7 +169,6 @@ def analyze_asset(tv_name, yf_ticker):
             "sl": swing_low,
             "tp1": close_curr + (risk * TP1_RATIO),
             "tp2": close_curr + (risk * TP2_RATIO),
-            "risk_pts": risk,
         }
 
     elif short_signal:
@@ -159,62 +182,53 @@ def analyze_asset(tv_name, yf_ticker):
             "sl": swing_high,
             "tp1": close_curr - (risk * TP1_RATIO),
             "tp2": close_curr - (risk * TP2_RATIO),
-            "risk_pts": risk,
         }
 
   except Exception as e:
-    print(f"Erreur sur {tv_name} ({yf_ticker}): {e}")
+    print(f"Erreur sur {tv_name}: {e}")
 
   return None
 
 
 # ==============================================================================
-# 5. BOUCLE CONTINUE DU BOT EN ARRIÈRE-PLAN
+# 6. BOUCLE DU BOT AVEC NOTIFICATION TELEGRAM
 # ==============================================================================
 def run_bot_loop():
   while True:
     print(
-        "=================================================================="
-    )
-    print(
-        f"🚀 SCAN BOT 4H (Double TP) -"
-        f" {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
-    print(
-        "=================================================================="
+        f"\n--- Scan 4H démarré le {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
     )
 
-    signals_found = 0
     for tv_name, yf_ticker in ASSETS.items():
       res = analyze_asset(tv_name, yf_ticker)
       if res:
-        signals_found += 1
-        print(f"\n🎯 [OPPORTUNITÉ DÉTECTÉE] {res['symbol']}")
-        print(f"   ► Ordre      : {res['action']}")
-        print(f"   ► Prix Entrée: {res['price']:.5f}")
-        print(f"   ► Stop Loss  : {res['sl']:.5f}")
-        print(f"   ► TP 1 (50%) : {res['tp1']:.5f} (Ratio 1:1)")
-        print(f"   ► TP 2 (50%) : {res['tp2']:.5f} (Ratio 1:2)")
-      else:
-        print(f"⏳ {tv_name} : RAS", end=" | ")
+        msg = (
+            f"🚨 *NOUVEAU SIGNAL TRADING (4H)* 🚨\n\n"
+            f"🔹 Actif : `{res['symbol']}`\n"
+            f"🔹 Ordre : *{res['action']}*\n"
+            f"🔹 Entrée : `{res['price']:.5f}`\n"
+            f"🔹 Stop Loss : `{res['sl']:.5f}`\n"
+            f"🔹 TP 1 (50%) : `{res['tp1']:.5f}` (1:1)\n"
+            f"🔹 TP 2 (50%) : `{res['tp2']:.5f}` (1:2)"
+        )
+        # Envoi sur Telegram
+        send_telegram_message(msg)
+        print(f"🎯 Signal envoyé pour {res['symbol']}")
 
-    if signals_found == 0:
-      print(
-          "\n\nAucun signal validé sur l'ensemble des 26 actifs pour ce cycle."
-      )
+      time.sleep(1)  # Petite pause pour éviter le blocage yfinance (Rate Limit)
 
-    print("\n💤 Pause de 1 heure avant le prochain scan...")
+    print("\n💤 Fin du scan. Prochaine vérification dans 1 heure.")
     time.sleep(3600)
 
 
 # ==============================================================================
-# 6. LANCEMENT (WEB SERVER + THREAD BOT)
+# 7. LANCEMENT
 # ==============================================================================
 if __name__ == "__main__":
-  # Lancement du scan bot en arrière-plan
+  # Lancement du bot en arrière-plan
   bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
   bot_thread.start()
 
-  # Lancement du serveur web Flask requis par Render
+  # Lancement du serveur web Flask pour Render
   port = int(os.environ.get("PORT", 10000))
   app.run(host="0.0.0.0", port=port)
