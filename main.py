@@ -1,239 +1,177 @@
-import os
 import time
-import requests
-import numpy as np
 import pandas as pd
+import numpy as np
 import yfinance as yf
 
-# ==========================================
-# 1. CONFIGURATION & PARAMÈTRES GÉNÉRAUX
-# ==========================================
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "TON_TOKEN_TELEGRAM_ICI")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "TON_CHAT_ID_ICI")
-
-CAPITAL_EUR = 10000.0  # Capital de départ en EUR
-RISK_PERCENT = 0.01    # 1% de risque par trade (100 €)
-
+# ==============================================================================
+# 1. LISTE COMPLETE DES 26 ACTIFS (MAPPING YFINANCE / TRADINGVIEW)
+# ==============================================================================
 ASSETS = {
     # Forex
-    "EURUSD=X": {"name": "EUR/USD", "tv_symbol": "FX:EURUSD", "base_ccy": "USD"},
-    "GBPUSD=X": {"name": "GBP/USD", "tv_symbol": "FX:GBPUSD", "base_ccy": "USD"},
-    "USDJPY=X": {"name": "USD/JPY", "tv_symbol": "FX:USDJPY", "base_ccy": "JPY"},
-    "GBPJPY=X": {"name": "GBP/JPY", "tv_symbol": "FX:GBPJPY", "base_ccy": "JPY"},
-    "AUDUSD=X": {"name": "AUD/USD", "tv_symbol": "FX:AUDUSD", "base_ccy": "USD"},
-    "USDCAD=X": {"name": "USD/CAD", "tv_symbol": "FX:USDCAD", "base_ccy": "CAD"},
-    "USDCHF=X": {"name": "USD/CHF", "tv_symbol": "FX:USDCHF", "base_ccy": "CHF"},
-    "EURGBP=X": {"name": "EUR/GBP", "tv_symbol": "FX:EURGBP", "base_ccy": "GBP"},
-    "EURJPY=X": {"name": "EUR/JPY", "tv_symbol": "FX:EURJPY", "base_ccy": "JPY"},
-    
+    "FX:EURUSD": "EURUSD=X",
+    "FX:GBPUSD": "GBPUSD=X",
+    "FX:USDJPY": "USDJPY=X",
+    "FX:GBPJPY": "GBPJPY=X",
+    "FX:AUDUSD": "AUDUSD=X",
+    "FX:USDCAD": "USDCAD=X",
+    "FX:USDCHF": "USDCHF=X",
+    "FX:EURGBP": "EURGBP=X",
+    "FX:EURJPY": "EURJPY=X",
     # Indices
-    "^GSPC":    {"name": "S&P 500", "tv_symbol": "SPX", "base_ccy": "USD"},
-    "^NDX":     {"name": "Nasdaq 100", "tv_symbol": "NDX", "base_ccy": "USD"},
-    "^DJI":     {"name": "Dow Jones 30", "tv_symbol": "DJI", "base_ccy": "USD"},
-    "^GDAXI":   {"name": "DAX 40", "tv_symbol": "XETR:DAX", "base_ccy": "EUR"},
-    "^FCHI":    {"name": "CAC 40", "tv_symbol": "TVC:PX1", "base_ccy": "EUR"},
-    "^FTSE":    {"name": "FTSE 100", "tv_symbol": "TVC:UKX", "base_ccy": "GBP"},
-    "^AXJO":    {"name": "S&P/ASX 200", "tv_symbol": "ASX:XJO", "base_ccy": "AUD"},
-
+    "SPX": "^GSPC",
+    "NDX": "^IXIC",
+    "DJI": "^DJI",
+    "XETR:DAX": "^GDAXI",
+    "TVC:PX1": "^FCHI",
+    "TVC:UKX": "^FTSE",
+    "ASX:XJO": "^AXJO",
     # Commodities
-    "GC=F":     {"name": "Gold (Or)", "tv_symbol": "OANDA:XAUUSD", "base_ccy": "USD"},
-    "CL=F":     {"name": "WTI Crude Oil", "tv_symbol": "TVC:USOIL", "base_ccy": "USD"},
-
-    # Cryptomonnaies
-    "BTC-USD":  {"name": "Bitcoin", "tv_symbol": "BINANCE:BTCUSDT", "base_ccy": "USD"},
-    "ETH-USD":  {"name": "Ethereum", "tv_symbol": "BINANCE:ETHUSDT", "base_ccy": "USD"},
-    "SOL-USD":  {"name": "Solana", "tv_symbol": "BINANCE:SOLUSDT", "base_ccy": "USD"},
-
-    # Actions Tech
-    "AAPL":     {"name": "Apple", "tv_symbol": "NASDAQ:AAPL", "base_ccy": "USD"},
-    "NVDA":     {"name": "Nvidia", "tv_symbol": "NASDAQ:NVDA", "base_ccy": "USD"},
-    "TSLA":     {"name": "Tesla", "tv_symbol": "NASDAQ:TSLA", "base_ccy": "USD"},
-    "MSFT":     {"name": "Microsoft", "tv_symbol": "NASDAQ:MSFT", "base_ccy": "USD"},
-    "AMZN":     {"name": "Amazon", "tv_symbol": "NASDAQ:AMZN", "base_ccy": "USD"}
+    "OANDA:XAUUSD": "GC=F",
+    "TVC:USOIL": "CL=F",
+    # Crypto
+    "BINANCE:BTCUSDT": "BTC-USD",
+    "BINANCE:ETHUSDT": "ETH-USD",
+    "BINANCE:SOLUSDT": "SOL-USD",
+    # Tech Equities
+    "NASDAQ:AAPL": "AAPL",
+    "NASDAQ:NVDA": "NVDA",
+    "NASDAQ:TSLA": "TSLA",
+    "NASDAQ:MSFT": "MSFT",
+    "NASDAQ:AMZN": "AMZN",
 }
 
+# ==============================================================================
+# 2. PARAMÈTRES ET CONFIGURATION DE LA STRATÉGIE
+# ==============================================================================
+TIMEFRAME = "4h"
+RSI_LEN = 13
+BAND_LEN = 34
+BAND_MULT = 1.6185
+PRICE_LEN = 2
+SIGNAL_LEN = 7
+SMA_LEN = 50
 
-# ==========================================
-# 2. INDICATEURS & RECHERCHE DE PIVOTS
-# ==========================================
-def calculate_tdi(df: pd.DataFrame, rsi_period=13, band_period=34, fast_sma=2, slow_sma=7) -> pd.DataFrame:
-    """Calcule l'indicateur Traders Dynamic Index (TDI)."""
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
-    rs = gain / (loss + 1e-10)
-    rsi = 100 - (100 / (1 + rs))
+SWING_LOOKBACK = 10     # Fenêtre de recherche Swing Low/High pour le SL
+TP1_RATIO = 1.0         # Ratio pour le premier objectif (sécurisation partielle)
+TP2_RATIO = 2.0         # Ratio pour le deuxième objectif final
 
-    mb = rsi.rolling(window=band_period).mean()
+# ==============================================================================
+# 3. CALCULS TECHNIQUES (RSI WILDER + TDI EXACT)
+# ==============================================================================
+def rma(x, n):
+    a = 1 / n
+    return x.ewm(alpha=a, adjust=False).mean()
 
-    df['TDI_Green'] = rsi.rolling(window=fast_sma).mean()
-    df['TDI_Red'] = rsi.rolling(window=slow_sma).mean()
-    df['TDI_Yellow'] = mb
+def calculate_rsi_wilder(close_series, length=13):
+    delta = close_series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = rma(gain, length)
+    avg_loss = rma(loss, length)
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
+def calculate_tdi_and_sma(df):
+    df["RSI"] = calculate_rsi_wilder(df["Close"], RSI_LEN)
+    df["TDI_Basis"] = df["RSI"].rolling(window=BAND_LEN).mean()
+    dev = df["RSI"].rolling(window=BAND_LEN).std() * BAND_MULT
+    df["TDI_Up"] = df["TDI_Basis"] + dev
+    df["TDI_Dn"] = df["TDI_Basis"] - dev
+    df["TDI_Price"] = df["RSI"].rolling(window=PRICE_LEN).mean()
+    df["TDI_Signal"] = df["RSI"].rolling(window=SIGNAL_LEN).mean()
+    df["SMA_50"] = df["Close"].rolling(window=SMA_LEN).mean()
     return df
 
-
-def find_recent_swing_low(df: pd.DataFrame, max_lookback: int = 15) -> float:
-    """Pour LONG : cherche le vrai creux Swing Low le plus proche."""
-    if len(df) < max_lookback + 2:
-        return float(df['Low'].tail(max_lookback).min())
-
-    for i in range(len(df) - 2, len(df) - max_lookback, -1):
-        low_current = df['Low'].iloc[i]
-        low_prev = df['Low'].iloc[i - 1]
-        low_next = df['Low'].iloc[i + 1]
-
-        if low_current < low_prev and low_current < low_next:
-            return float(low_current)
-
-    return float(df['Low'].iloc[-max_lookback:].min())
-
-
-def find_recent_swing_high(df: pd.DataFrame, max_lookback: int = 15) -> float:
-    """Pour SHORT : cherche le vrai sommet Swing High le plus proche."""
-    if len(df) < max_lookback + 2:
-        return float(df['High'].tail(max_lookback).max())
-
-    for i in range(len(df) - 2, len(df) - max_lookback, -1):
-        high_current = df['High'].iloc[i]
-        high_prev = df['High'].iloc[i - 1]
-        high_next = df['High'].iloc[i + 1]
-
-        if high_current > high_prev and high_current > high_next:
-            return float(high_current)
-
-    return float(df['High'].iloc[-max_lookback:].max())
-
-
-# ==========================================
-# 3. NOTIFICATION TELEGRAM
-# ==========================================
-def send_telegram_alert(message: str):
-    """Envoie une notification formatée via Telegram."""
-    if TELEGRAM_TOKEN == "TON_TOKEN_TELEGRAM_ICI":
-        print("[MOCK TELEGRAM]\n" + message)
-        return
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True
-    }
+# ==============================================================================
+# 4. ANALYSE STRICTE DES CONDITIONS ET CALCUL DU DOUBLE TP
+# ==============================================================================
+def analyze_asset(tv_name, yf_ticker):
     try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print(f"Erreur d'envoi Telegram : {e}")
-
-
-# ==========================================
-# 4. ANALYSE DU SIGNAL SUR UN ACTIF
-# ==========================================
-def analyze_asset(symbol: str, meta: dict):
-    """Télécharge les données 4H et vérifie les signaux LONG et SHORT."""
-    try:
-        df = yf.download(symbol, period="60d", interval="4h", progress=False)
-        df = df.dropna()
-
-        if df.empty or len(df) < 60:
-            return
-
-        df['SMA50'] = df['Close'].rolling(window=50).mean()
-        df = calculate_tdi(df)
-
-        # On analyse la dernière bougie clôturée (-2) et la précédente (-3)
-        last = df.iloc[-2]
-        prev = df.iloc[-3]
-
-        entry_price = float(last['Close'])
-        tv_url = f"https://www.tradingview.com/chart/?symbol={meta['tv_symbol']}"
-        risk_amount_eur = CAPITAL_EUR * RISK_PERCENT
-
-        # ----------------------------------------------------
-        # CONDITION 1 : SIGNAL LONG (ACHAT)
-        # ----------------------------------------------------
-        long_above_sma = last['Close'] > last['SMA50']
-        long_green_red = last['TDI_Green'] >= last['TDI_Red']
-        long_cross = (prev['TDI_Red'] <= prev['TDI_Yellow']) and (last['TDI_Red'] > last['TDI_Yellow'])
-
-        if long_above_sma and long_green_red and long_cross:
-            swing_low = find_recent_swing_low(df, max_lookback=15)
-            sl_price = swing_low * 0.995  # Marge -0.5% sous le creux
-            sl_distance = entry_price - sl_price
-
-            if sl_distance > 0:
-                tp1_price = entry_price + (sl_distance * 2.0)
-                tp2_price = entry_price + (sl_distance * 4.0)
-                position_units = risk_amount_eur / sl_distance
-
-                msg = (
-                    f"🟢 *SIGNAL DE TRADING 4H (LONG)* 🟢\n\n"
-                    f"📊 *Actif* : {meta['name']} (`{symbol}`)\n"
-                    f"💵 *Prix d'entrée (Clôture)* : `{entry_price:.4f}`\n"
-                    f"🛑 *Stop Loss* : `{sl_price:.4f}` (Creux Swing : {swing_low:.4f})\n\n"
-                    f"🎯 *Take Profit 1 (2:1)* : `{tp1_price:.4f}` (Fermer 50%)\n"
-                    f"🎯 *Take Profit 2 (4:1)* : `{tp2_price:.4f}` (Fermer 50%)\n\n"
-                    f"📐 *Risque engagé* : {risk_amount_eur:.2f} € (1%)\n"
-                    f"📦 *Taille indicative* : `{position_units:.2f}` unités\n\n"
-                    f"🔗 [Ouvrir le graphique TradingView]({tv_url})"
-                )
-                send_telegram_alert(msg)
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Signal LONG envoyé pour {meta['name']}")
-                return
-
-        # ----------------------------------------------------
-        # CONDITION 2 : SIGNAL SHORT (VENTE)
-        # ----------------------------------------------------
-        short_below_sma = last['Close'] < last['SMA50']
-        short_green_red = last['TDI_Green'] <= last['TDI_Red']
-        short_cross = (prev['TDI_Red'] >= prev['TDI_Yellow']) and (last['TDI_Red'] < last['TDI_Yellow'])
-
-        if short_below_sma and short_green_red and short_cross:
-            swing_high = find_recent_swing_high(df, max_lookback=15)
-            sl_price = swing_high * 1.005  # Marge +0.5% au-dessus du sommet
-            sl_distance = sl_price - entry_price
-
-            if sl_distance > 0:
-                tp1_price = entry_price - (sl_distance * 2.0)
-                tp2_price = entry_price - (sl_distance * 4.0)
-                position_units = risk_amount_eur / sl_distance
-
-                msg = (
-                    f"🔴 *SIGNAL DE TRADING 4H (SHORT)* 🔴\n\n"
-                    f"📊 *Actif* : {meta['name']} (`{symbol}`)\n"
-                    f"💵 *Prix d'entrée (Clôture)* : `{entry_price:.4f}`\n"
-                    f"🛑 *Stop Loss* : `{sl_price:.4f}` (Sommet Swing : {swing_high:.4f})\n\n"
-                    f"🎯 *Take Profit 1 (2:1)* : `{tp1_price:.4f}` (Fermer 50%)\n"
-                    f"🎯 *Take Profit 2 (4:1)* : `{tp2_price:.4f}` (Fermer 50%)\n\n"
-                    f"📐 *Risque engagé* : {risk_amount_eur:.2f} € (1%)\n"
-                    f"📦 *Taille indicative* : `{position_units:.2f}` unités\n\n"
-                    f"🔗 [Ouvrir le graphique TradingView]({tv_url})"
-                )
-                send_telegram_alert(msg)
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Signal SHORT envoyé pour {meta['name']}")
-                return
-
-    except Exception as e:
-        print(f"Erreur d'analyse sur {symbol} : {e}")
-
-
-# ==========================================
-# 5. BOUCLE PRINCIPALE
-# ==========================================
-def run_bot():
-    """Lance le scan automatique des actifs."""
-    print("🤖 Bot 4H (LONG & SHORT) démarré. Scan en cours...")
-    
-    while True:
-        print(f"\n--- Début du scan : {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
-        for symbol, meta in ASSETS.items():
-            analyze_asset(symbol, meta)
-            time.sleep(1)
+        df = yf.download(yf_ticker, period="60d", interval=TIMEFRAME, progress=False)
+        if len(df) < (SMA_LEN + SWING_LOOKBACK + 5):
+            return None
         
-        print("--- Scan terminé. Prochain cycle dans 4 heures ---")
-        time.sleep(14400)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
+        df = calculate_tdi_and_sma(df)
+
+        prev = df.iloc[-3]
+        curr = df.iloc[-2]
+
+        close_curr = float(curr["Close"])
+        signal_curr = float(curr["TDI_Signal"])
+        basis_curr = float(curr["TDI_Basis"])
+        price_curr = float(curr["TDI_Price"])
+        sma50_curr = float(curr["SMA_50"])
+
+        signal_prev = float(prev["TDI_Signal"])
+        basis_prev = float(prev["TDI_Basis"])
+
+        cross_up = (signal_prev <= basis_prev) and (signal_curr > basis_curr)
+        cross_down = (signal_prev >= basis_prev) and (signal_curr < basis_curr)
+
+        long_signal = cross_up and (price_curr > signal_curr) and (close_curr > sma50_curr)
+        short_signal = cross_down and (price_curr < signal_curr) and (close_curr < sma50_curr)
+
+        # Calcul SL et DOUBLE TP
+        if long_signal:
+            swing_low = float(df["Low"].iloc[-(SWING_LOOKBACK + 2):-2].min())
+            risk = close_curr - swing_low
+            if risk > 0:
+                return {
+                    "symbol": tv_name,
+                    "action": "LONG 🟢",
+                    "price": close_curr,
+                    "sl": swing_low,
+                    "tp1": close_curr + (risk * TP1_RATIO),
+                    "tp2": close_curr + (risk * TP2_RATIO),
+                    "risk_pts": risk
+                }
+
+        elif short_signal:
+            swing_high = float(df["High"].iloc[-(SWING_LOOKBACK + 2):-2].max())
+            risk = swing_high - close_curr
+            if risk > 0:
+                return {
+                    "symbol": tv_name,
+                    "action": "SHORT 🔴",
+                    "price": close_curr,
+                    "sl": swing_high,
+                    "tp1": close_curr - (risk * TP1_RATIO),
+                    "tp2": close_curr - (risk * TP2_RATIO),
+                    "risk_pts": risk
+                }
+
+    except Exception as e:
+        print(f"Erreur sur {tv_name} ({yf_ticker}): {e}")
+
+    return None
+
+# ==============================================================================
+# 5. BOUCLE DE SCAN
+# ==============================================================================
+def run_scan():
+    print("==================================================================")
+    print(f"🚀 SCAN BOT 4H (Double TP) - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("==================================================================")
+    
+    signals_found = 0
+    for tv_name, yf_ticker in ASSETS.items():
+        res = analyze_asset(tv_name, yf_ticker)
+        if res:
+            signals_found += 1
+            print(f"\n🎯 [OPPORTUNITÉ DÉTECTÉE] {res['symbol']}")
+            print(f"   ► Ordre      : {res['action']}")
+            print(f"   ► Prix Entrée: {res['price']:.5f}")
+            print(f"   ► Stop Loss  : {res['sl']:.5f}")
+            print(f"   ► TP 1 (50%) : {res['tp1']:.5f} (Ratio 1:1)")
+            print(f"   ► TP 2 (50%) : {res['tp2']:.5f} (Ratio 1:2)")
+        else:
+            print(f"⏳ {tv_name} : RAS", end=" | ")
+            
+    if signals_found == 0:
+        print("\n\nAucun signal validé sur l'ensemble des 26 actifs pour ce cycle.")
 
 if __name__ == "__main__":
-    run_bot()
+    run_scan()
