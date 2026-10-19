@@ -136,8 +136,8 @@ def analyze_asset(tv_name, yf_ticker):
 
     df = calculate_tdi_and_sma(df)
 
-    prev = df.iloc[-3]
-    curr = df.iloc[-2]
+    prev = df.iloc[-2]
+    curr = df.iloc[-1]
 
     close_curr = float(curr["Close"])
     signal_curr = float(curr["TDI_Signal"])
