@@ -17,9 +17,8 @@ def home():
 
 
 # ==============================================================================
-# 1. CONFIGURATION TELEGRAM (Récupérée de ton ancien bot)
+# 1. CONFIGURATION TELEGRAM
 # ==============================================================================
-# Sur Render, tu peux stocker ton Token et ton Chat ID dans les "Environment Variables"
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "TON_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "TON_CHAT_ID")
 
@@ -123,7 +122,7 @@ def calculate_tdi_and_sma(df):
 
 
 # ==============================================================================
-# 5. ANALYSE ET DOUBLE TP
+# 5. ANALYSE ET DOUBLE TP (Bougies -2 et -1 en temps réel)
 # ==============================================================================
 def analyze_asset(tv_name, yf_ticker):
   try:
@@ -140,9 +139,9 @@ def analyze_asset(tv_name, yf_ticker):
     curr = df.iloc[-1]
 
     close_curr = float(curr["Close"])
-    signal_curr = float(curr["TDI_Signal"])
-    basis_curr = float(curr["TDI_Basis"])
-    price_curr = float(curr["TDI_Price"])
+    signal_curr = float(curr["TDI_Signal"])  # Rouge
+    basis_curr = float(curr["TDI_Basis"])  # Jaune
+    price_curr = float(curr["TDI_Price"])  # Verte
     sma50_curr = float(curr["SMA_50"])
 
     signal_prev = float(prev["TDI_Signal"])
@@ -191,17 +190,23 @@ def analyze_asset(tv_name, yf_ticker):
 
 
 # ==============================================================================
-# 6. BOUCLE DU BOT AVEC NOTIFICATION TELEGRAM
+# 6. BOUCLE DU BOT AVEC MESSAGE DE DÉMARRAGE DE SCAN
 # ==============================================================================
 def run_bot_loop():
   while True:
-    print(
-        f"\n--- Scan 4H démarré le {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')} ---"
+    timestamp_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n--- Scan 4H démarré le {timestamp_str} ---")
+
+    # Message de confirmation sur Telegram pour chaque début de scan
+    send_telegram_message(
+        f"🔄 *Bot 4H : Scan des 26 actifs en cours...* (`{timestamp_str}`)"
     )
 
+    signals_found = 0
     for tv_name, yf_ticker in ASSETS.items():
       res = analyze_asset(tv_name, yf_ticker)
       if res:
+        signals_found += 1
         msg = (
             f"🚨 *NOUVEAU SIGNAL TRADING (4H)* 🚨\n\n"
             f"🔹 Actif : `{res['symbol']}`\n"
@@ -211,11 +216,13 @@ def run_bot_loop():
             f"🔹 TP 1 (50%) : `{res['tp1']:.5f}` (1:1)\n"
             f"🔹 TP 2 (50%) : `{res['tp2']:.5f}` (1:2)"
         )
-        # Envoi sur Telegram
         send_telegram_message(msg)
         print(f"🎯 Signal envoyé pour {res['symbol']}")
 
-      time.sleep(1)  # Petite pause pour éviter le blocage yfinance (Rate Limit)
+      time.sleep(1)  # Petite pause anti-spam yfinance
+
+    if signals_found == 0:
+      print("Aucun signal détecté sur ce cycle.")
 
     print("\n💤 Fin du scan. Prochaine vérification dans 1 heure.")
     time.sleep(3600)
@@ -225,10 +232,8 @@ def run_bot_loop():
 # 7. LANCEMENT
 # ==============================================================================
 if __name__ == "__main__":
-  # Lancement du bot en arrière-plan
   bot_thread = threading.Thread(target=run_bot_loop, daemon=True)
   bot_thread.start()
 
-  # Lancement du serveur web Flask pour Render
   port = int(os.environ.get("PORT", 10000))
   app.run(host="0.0.0.0", port=port)
